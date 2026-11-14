@@ -55,6 +55,7 @@ export default function TripMap({
       .catch(() => setFailed(true));
     return () => {
       disposed = true;
+      map.current?.stop();
       map.current?.remove();
       map.current = null;
       setReady(false);
@@ -96,8 +97,8 @@ export default function TripMap({
       m.fitBounds(layer.getBounds(), { padding: [35, 35], maxZoom: 15 });
       boundsKey.current = nextBounds;
     }
-    setTimeout(() => m.invalidateSize(), 50);
-    return () => layer.remove();
+    const resizeTimer = setTimeout(() => { if (map.current === m) m.invalidateSize(); }, 50);
+    return () => { clearTimeout(resizeTimer); layer.remove(); };
   }, [stops, ready]);
   return (
     <div className={'map-wrap ' + (large ? 'large' : '')}>
