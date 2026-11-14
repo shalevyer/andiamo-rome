@@ -77,6 +77,8 @@ import {
 } from './model';
 import { useTrip } from './use-trip';
 import TripMap from './trip-map';
+import Dialog from './dialog';
+import StopDetails from './stop-details';
 import { documents, documentAvailability, saveDocument, openDocument } from './documents';
 import { createTripLink, readTripLink } from './share';
 const icons = { sight: Landmark, food: Utensils, coffee: Coffee, transfer: Plane, free: Leaf };
@@ -88,7 +90,7 @@ const nav = [
 ] as const;
 type Tab = (typeof nav)[number]['id'];
 type Modal =
-  | { type: 'stop'; value?: Stop }
+  | { type: 'stop'; value?: Stop; edit?: boolean }
   | { type: 'booking'; value?: Booking; kind?: Booking['type'] }
   | { type: 'day' }
   | { type: 'notes' }
@@ -106,61 +108,6 @@ const download = (name: string, content: string, type = 'application/json') => {
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 };
-function Dialog({
-  title,
-  eyebrow,
-  children,
-  onClose,
-}: {
-  title: string;
-  eyebrow?: string;
-  children: ReactNode;
-  onClose: () => void;
-}) {
-  const ref = useRef<HTMLDialogElement>(null),
-    timer = useRef<ReturnType<typeof setTimeout>>();
-  const [closing, setClosing] = useState(false);
-  useEffect(() => {
-    ref.current?.showModal();
-    return () => {
-      clearTimeout(timer.current);
-      ref.current?.close();
-    };
-  }, []);
-  const dismiss = () => {
-    if (closing) return;
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      onClose();
-      return;
-    }
-    setClosing(true);
-    timer.current = setTimeout(onClose, 160);
-  };
-  return (
-    <dialog
-      className={'dialog ' + (closing ? 'is-closing' : '')}
-      ref={ref}
-      onCancel={(e) => {
-        e.preventDefault();
-        dismiss();
-      }}
-      onClick={(e) => {
-        if (e.target === ref.current) dismiss();
-      }}
-    >
-      <div className="dialog-top">
-        <div>
-          {eyebrow && <span className="eyebrow">{eyebrow}</span>}
-          <h2>{title}</h2>
-        </div>
-        <button className="icon-button" aria-label="סגירה" onClick={dismiss}>
-          <X size={20} />
-        </button>
-      </div>
-      {children}
-    </dialog>
-  );
-}
 function Field({
   label,
   children,
@@ -215,12 +162,14 @@ function Status({ state, retry }: { state: string; retry: () => void }) {
 function StopCard({
   stop,
   index,
+  onOpen,
   onEdit,
   onDone,
   onMap,
 }: {
   stop: Stop;
   index: number;
+  onOpen: () => void;
   onEdit: () => void;
   onDone: () => void;
   onMap: () => void;
@@ -239,7 +188,7 @@ function StopCard({
       </div>
       <div className="stop-card">
         <div className="stop-main">
-          <button className="stop-open" onClick={onEdit}>
+          <button className="stop-open" onClick={onOpen}>
             <div className="stop-category">
               <span>{categories[stop.category]}</span>
               {stop.duration && (
@@ -294,7 +243,7 @@ function StopCard({
               aria-label={'עריכת ' + stop.title}
               onClick={onEdit}
             >
-              <MoreHorizontal size={19} />
+              <Pencil size={16} />
             </button>
           </div>
         </div>
@@ -941,7 +890,8 @@ export default function TripApp() {
                           key={s.id}
                           stop={s}
                           index={i}
-                          onEdit={() => setModal({ type: 'stop', value: s })}
+                          onOpen={() => setModal({ type: 'stop', value: s })}
+                          onEdit={() => setModal({ type: 'stop', value: s, edit: true })}
                           onDone={() => {
                             act({ id: uid(), type: 'done', value: { id: s.id, done: !s.done } });
                             if (!s.done) {
@@ -1451,21 +1401,24 @@ export default function TripApp() {
         </div>
       )}
       {modal?.type === 'stop' && (
-        <StopForm
-          stop={modal.value}
+        <StopSheet
+          stop={modal.value ? trip.stops.find(s => s.id === modal.value?.id) || modal.value : undefined}
+          startEditing={modal.edit}
           day={day}
           trip={trip}
           onClose={() => setModal(null)}
+          onCopy={copy}
+          onDone={stop => act({ id: uid(), type: 'done', value: { id: stop.id, done: !stop.done } })}
           onSave={(value) => {
             act({ id: uid(), type: 'stop', value });
-            setModal(null);
+            setModal({ type: 'stop', value });
             notify('העצירה נשמרה בתוכנית');
           }}
-          onMove={(s) => {
-            act({ id: uid(), type: 'move', value: s });
+          onMove={(value) => {
+            act({ id: uid(), type: 'move', value });
             notify('סדר העצירות עודכן');
           }}
-          onDelete={(s) => setModal({ type: 'delete', kind: 'stop', id: s.id, title: s.title })}
+          onDelete={(stop) => setModal({ type: 'delete', kind: 'stop', id: stop.id, title: stop.title })}
         />
       )}
       {modal?.type === 'booking' && (
@@ -1515,7 +1468,6 @@ export default function TripApp() {
         >
           <Field label="הפתק שלנו">
             <textarea
-              autoFocus
               name="notes"
               rows={9}
               maxLength={12000}
@@ -1544,7 +1496,7 @@ export default function TripApp() {
           }}
         >
           <Field label="מה לזכור?">
-            <input name="text" autoFocus required maxLength={300} placeholder="למשל, מתאם חשמל" />
+            <input name="text" required maxLength={300} placeholder="למשל, מתאם חשמל" />
           </Field>
         </SimpleForm>
       )}
@@ -1714,6 +1666,45 @@ function SimpleForm({
     </Dialog>
   );
 }
+function StopSheet({ stop, startEditing, day, trip, onClose, onSave, onDelete, onMove, onDone, onCopy }: {
+  stop?: Stop;
+  startEditing?: boolean;
+  day: number;
+  trip: Trip;
+  onClose: () => void;
+  onSave: (stop: Stop) => void;
+  onDelete: (stop: Stop) => void;
+  onMove: (value: { id: string; direction: 'up' | 'down' }) => void;
+  onDone: (stop: Stop) => void;
+  onCopy: (value: string) => void;
+}) {
+  const [editing, setEditing] = useState(startEditing || !stop);
+  const body = useRef<HTMLDivElement>(null);
+  const showDetails = () => {
+    setEditing(false);
+    body.current?.closest('.dialog-body')?.scrollTo({ top: 0 });
+  };
+  const showEditor = () => {
+    setEditing(true);
+    body.current?.closest('.dialog-body')?.scrollTo({ top: 0 });
+  };
+  return (
+    <Dialog
+      title={editing ? (stop ? 'עריכת העצירה' : 'מוסיפים רגע לטיול') : stop!.title}
+      eyebrow={editing ? (stop?.title || 'מה מתחשק לנו לעשות?') : categories[stop!.category]}
+      onClose={onClose}
+      onBack={editing && stop ? showDetails : undefined}
+    >
+      <div ref={body} className="stop-sheet-content" key={editing ? 'edit' : 'view'}>
+        {editing ? <StopForm stop={stop} day={day} trip={trip}
+          onClose={stop ? showDetails : onClose}
+          onSave={value => { onSave(value); showDetails(); }}
+          onDelete={onDelete} onMove={onMove} />
+        : stop && <StopDetails stop={stop} trip={trip} onEdit={showEditor} onDone={() => onDone(stop)} onCopy={onCopy} />}
+      </div>
+    </Dialog>
+  );
+}
 function StopForm({
   stop,
   day,
@@ -1776,16 +1767,10 @@ function StopForm({
   };
   const Icon = icons[stop?.category || 'sight'];
   return (
-    <Dialog
-      title={stop ? 'כל הפרטים של העצירה' : 'מוסיפים רגע לטיול'}
-      eyebrow={stop ? stop.title : 'מה מתחשק לנו לעשות?'}
-      onClose={onClose}
-    >
-      <form onSubmit={submit}>
+    <form onSubmit={submit}>
         <div className="form-grid">
           <Field label="שם המקום או התוכנית" wide>
             <input
-              autoFocus
               name="title"
               defaultValue={stop?.title}
               placeholder="למשל, קפה קטן ליד המלון"
@@ -1963,8 +1948,7 @@ function StopForm({
             </button>
           )}
         </div>
-      </form>
-    </Dialog>
+    </form>
   );
 }
 function BookingForm({
@@ -2043,7 +2027,6 @@ function BookingForm({
               defaultValue={b?.title}
               required
               maxLength={300}
-              autoFocus
               placeholder={flight ? 'טסים לרומא' : 'שם מקום האירוח או ההזמנה'}
             />
           </Field>

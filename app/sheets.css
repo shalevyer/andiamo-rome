@@ -1,0 +1,97 @@
+.dialog[open] {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+.dialog-top {
+  flex: 0 0 auto;
+  padding: 25px 27px 20px;
+  gap: 16px;
+}
+.dialog-heading { min-width: 0; }
+.dialog-heading h2 { overflow-wrap: anywhere; }
+.dialog-close { flex: 0 0 44px; width: 44px; height: 44px; }
+.dialog-body {
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  min-height: 0;
+  padding: 0 27px 27px;
+}
+.sheet-grab-area { display: none; }
+.sheet-back { margin-bottom: 10px; color: var(--muted); font-size: 12px; }
+.dialog.is-closing { animation-duration: 220ms; }
+.dialog form > .form-actions {
+  bottom: -27px;
+  margin-inline: -27px;
+  padding: 16px 27px 10px;
+}
+.stop-sheet-content { animation: detail-content-in 180ms ease both; }
+.detail-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 22px; }
+.detail-meta .badge { font-size: 11px; padding: 5px 10px; }
+.detail-done { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+.detail-when { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; padding-bottom: 23px; border-bottom: 1px solid var(--line); }
+.detail-when > div { display: flex; align-items: flex-start; gap: 11px; min-width: 0; }
+.detail-when svg, .detail-location > svg { color: var(--muted); flex: 0 0 auto; margin-top: 3px; }
+.detail-when strong { display: block; font-size: 15px; font-weight: 500; line-height: 1.6; }
+.detail-when small { display: block; color: var(--muted); font-size: 12px; margin-top: 4px; line-height: 1.7; }
+.detail-location { display: flex; gap: 11px; margin-top: 23px; }
+.detail-location > div { min-width: 0; }
+.detail-location span, .detail-notes h3 { font-size: 12px; font-weight: 400; color: var(--muted); line-height: 1.7; }
+.detail-location p { font-size: 15px; line-height: 1.7; margin-top: 4px; overflow-wrap: anywhere; }
+.detail-notes { margin-top: 25px; }
+.detail-notes p { margin-top: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; line-height: 1.95; }
+.detail-reference { display: flex; align-items: center; gap: 11px; width: 100%; text-align: start; border: 1px solid var(--line); background: var(--soft); border-radius: 12px; padding: 14px; margin-top: 22px; }
+.detail-reference > span { flex: 1; font-size: 12px; color: var(--muted); }
+.detail-reference strong { display: block; color: var(--ink); font-size: 15px; font-weight: 500; margin-top: 4px; overflow-wrap: anywhere; }
+.detail-reference small { color: var(--muted); font-size: 12px; }
+.detail-link { margin-top: 18px; font-size: 13px; }
+.detail-actions { display: flex; gap: 10px; margin-top: 28px; }
+.detail-actions .button { flex: 1; min-height: 49px; font-size: 14px; }
+.detail-completion { width: 100%; display: flex; align-items: center; justify-content: center; gap: 9px; min-height: 49px; margin-top: 10px; font-size: 13px; color: var(--muted); }
+.detail-completion > span { display: grid; place-items: center; border: 1px solid #b4aaa0; width: 23px; height: 23px; border-radius: 50%; }
+.detail-completion > span svg { opacity: 0; }
+.detail-completion.is-done > span { background: var(--charcoal); border-color: var(--charcoal); color: white; }
+.detail-completion.is-done > span svg { opacity: 1; }
+@keyframes detail-content-in { from { opacity: 0; } to { opacity: 1; } }
+
+@media (max-width: 700px) {
+  .dialog {
+    position: fixed;
+    inset: auto 0 0;
+    margin: 0;
+    width: 100%;
+    max-width: none;
+    max-height: min(92dvh, 960px);
+    border: 0;
+    border-radius: 26px 26px 0 0;
+    box-shadow: 0 -12px 60px #2f2c2920;
+    transform: translateY(var(--sheet-offset, 0px));
+    transition: transform 220ms var(--ease);
+    animation: sheet-enter 360ms cubic-bezier(.22, 1, .36, 1) both;
+  }
+  .dialog.is-dragging { animation: none; transition: none; }
+  .dialog[data-entered='true']:not(.is-closing) { animation: none; }
+  .dialog.is-closing { animation: sheet-leave 220ms var(--ease) both; }
+  .dialog::backdrop { background: #29272566; backdrop-filter: blur(3px); }
+  .sheet-grab-area { display: flex; flex: 0 0 27px; align-items: center; justify-content: center; touch-action: none; cursor: grab; }
+  .sheet-grab-area:active { cursor: grabbing; }
+  .sheet-grab-area > span { display: block; width: 36px; height: 4px; border-radius: 10px; background: #cec7be; }
+  .dialog-top { padding: 1px 22px 20px; gap: 15px; }
+  .dialog-top h2 { font-size: 25px; font-weight: 500; line-height: 1.4; margin-top: 4px; }
+  .dialog-top .eyebrow { font-size: 11px; }
+  .dialog-close { margin-top: -3px; background: #efebe5; }
+  .dialog-body { padding: 0 22px max(22px, env(safe-area-inset-bottom)); }
+  .dialog form > .form-actions { bottom: -22px; margin-inline: -22px; padding: 14px 22px max(18px, env(safe-area-inset-bottom)); }
+  .dialog .form-actions .button { min-height: 48px; font-size: 14px; }
+  .detail-when { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 14px; }
+  .detail-when strong { font-size: 14px; }
+  .detail-when small { font-size: 12px; }
+  .detail-notes p { font-size: 15px; }
+  .detail-actions { position: sticky; bottom: -1px; margin-inline: -4px; padding: 14px 4px 4px; background: #fbfaf9f5; backdrop-filter: blur(10px); z-index: 1; }
+  @keyframes sheet-enter { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  @keyframes sheet-leave { from { transform: translateY(var(--sheet-offset, 0px)); } to { transform: translateY(100%); } }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dialog, .dialog::backdrop, .stop-sheet-content { animation: none !important; transition: none !important; }
+}

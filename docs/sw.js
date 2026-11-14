@@ -1,5 +1,5 @@
 const PREFIX = 'andiamo-public-' + new URL(self.registration.scope).pathname;
-const CACHE = PREFIX + '6f962d918c64';
+const CACHE = PREFIX + 'f0efc3b59673';
 const base = self.registration.scope;
 const asset = name => new URL(name, base).href;
 self.addEventListener('install', event => {
