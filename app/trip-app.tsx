@@ -61,6 +61,7 @@ import {
 } from 'lucide-react';
 import {
   categories,
+  initialTrip,
   statuses,
   dayDate,
   isoDay,
@@ -79,7 +80,9 @@ import { useTrip } from './use-trip';
 import TripMap from './trip-map';
 import Dialog from './dialog';
 import StopDetails from './stop-details';
-import { documents, documentAvailability, saveDocument, openDocument } from './documents';
+import SharedSettings from './shared-settings';
+import { invitationLink } from './connection';
+import { documents, documentAvailability, documentConflicts, saveDocument, openDocument, shareLocalDocument } from './documents';
 import { createTripLink, readTripLink } from './share';
 import { TRIP_STORAGE_KEY, RECOVERY_STORAGE_KEY } from './local-data';
 const icons = { sight: Landmark, food: Utensils, coffee: Coffee, transfer: Plane, free: Leaf };
@@ -93,13 +96,14 @@ type Tab = (typeof nav)[number]['id'];
 type Modal =
   | { type: 'stop'; value?: Stop; edit?: boolean }
   | { type: 'booking'; value?: Booking; kind?: Booking['type'] }
-  | { type: 'day' }
-  | { type: 'notes' }
+  | { type: 'day'; base?: { title: string; notes: string } }
+  | { type: 'notes'; value?: string }
   | { type: 'settings' }
+  | { type: 'sync' }
   | { type: 'share' }
   | { type: 'sharedTrip'; value: Trip }
   | { type: 'check'; group: 'before' | 'packing' }
-  | { type: 'delete'; kind: 'stop' | 'booking'; id: string; title: string }
+  | { type: 'delete'; kind: 'stop' | 'booking'; id: string; title: string; base: Stop | Booking }
   | null;
 const uid = () => crypto.randomUUID();
 const download = (name: string, content: string, type = 'application/json') => {
@@ -151,14 +155,11 @@ function Empty({
     </div>
   );
 }
-function Status({ state, retry }: { state: string; retry: () => void }) {
-  const Icon = state === 'error' ? CloudOff : state === 'loading' ? LoaderCircle : Smartphone;
-  return (
-    <button className={'save-status ' + state} onClick={retry} title="השינויים נשמרים במכשיר הזה">
-      <Icon size={15} />
-      <span>{state === 'error' ? 'לא נשמר — הורידו גיבוי' : state === 'loading' ? 'טוענים…' : 'שמור במכשיר'}</span>
-    </button>
-  );
+function Status({ state, connected, retry }: { state: string; connected: boolean; retry: () => void }) {
+  const Icon = state === 'offline' || state === 'error' ? CloudOff : state === 'loading' || state === 'saving' ? LoaderCircle : connected ? Cloud : Smartphone;
+  return <button className={'save-status ' + state} onClick={retry} title="שמירה, סנכרון והיסטוריה">
+    <Icon size={15} /><span>{state === 'error' ? 'נדרשת בדיקה' : state === 'offline' ? 'ממתין לחיבור' : state === 'saving' ? 'שומרים…' : state === 'loading' ? 'מתחברים…' : connected ? 'מסונכרן' : 'שמור במכשיר'}</span>
+  </button>;
 }
 function StopCard({
   stop,
@@ -408,7 +409,7 @@ function BookingCard({
 }
 
 export default function TripApp() {
-  const { trip, status, mutate, retry, recoveryMessage } = useTrip();
+  const { trip, status, mutate, retry, recoveryMessage, connected, conflicts } = useTrip();
   const [tab, setTab] = useState<Tab>('plan'),
     [day, setDay] = useState(0),
     [modal, setModal] = useState<Modal>(null),
@@ -418,6 +419,7 @@ export default function TripApp() {
     [filter, setFilter] = useState('all'),
     [dayDirection, setDayDirection] = useState(1),
     [docs, setDocs] = useState<Record<string, boolean>>({}),
+    [fileConflicts, setFileConflicts] = useState<Record<string, boolean>>({}),
     [uploading, setUploading] = useState(''),
     [shareUrl, setShareUrl] = useState('');
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined),
@@ -467,17 +469,19 @@ export default function TripApp() {
     history.replaceState(null, '', '#' + v);
     window.scrollTo({ top: 0, behavior: 'instant' });
   };
-  const loadDocs = () => documentAvailability().then(setDocs).catch(() => {});
+  const loadDocs = () => Promise.all([documentAvailability().then(setDocs), documentConflicts().then(setFileConflicts)]).catch(() => {});
   useEffect(() => {
     loadDocs();
     readTripLink(location.hash).then(value => {
       if (value) setModal({ type: 'sharedTrip', value });
     }).catch(() => notify('הקישור אינו תקין. אפשר לבקש קישור חדש או קובץ גיבוי.'));
+    window.addEventListener('andiamo-documents', loadDocs);
+    return () => window.removeEventListener('andiamo-documents', loadDocs);
   }, []);
   const viewDocument = (id: string) => openDocument(id).catch(() => notify('המסמך אינו זמין במכשיר הזה. אפשר להוסיף אותו בהזמנות.'));
   const shareTrip = async () => {
     try {
-      setShareUrl(await createTripLink(trip, location.href));
+      setShareUrl(connected ? invitationLink() : await createTripLink(trip, location.href));
       setModal({ type: 'share' });
     } catch {
       notify('התוכנית גדולה מדי לקישור. אפשר לשלוח קובץ גיבוי דרך ההגדרות.');
@@ -531,7 +535,8 @@ export default function TripApp() {
     try {
       await saveDocument(kind, file);
       setDocs((d) => ({ ...d, [kind]: true }));
-      notify('המסמך נשמר במכשיר הזה בלבד');
+      notify(connected ? 'המסמך נשמר. הסנכרון יושלם כשהחיבור זמין.' : 'המסמך נשמר במכשיר הזה בלבד');
+      loadDocs();
     } catch {
       notify('הקובץ לא נשמר. בדקו שזה PDF תקין עד 10MB ושיש מקום במכשיר.');
     } finally {
@@ -551,8 +556,8 @@ export default function TripApp() {
       if (file.size > 1000000) throw Error();
       const data = JSON.parse(await file.text());
       const t = tripSchema.parse(data.trip || data);
-      if (!window.confirm('לשחזר מהגיבוי? התוכנית, ההזמנות והרשימות הנוכחיות יוחלפו.')) return;
-      act({ id: uid(), type: 'restore', value: t });
+      if (!window.confirm(connected ? 'למזג את הגיבוי לטיול המשותף? תוספות יישמרו ושינויים סותרים יועברו לבדיקה.' : 'לשחזר מהגיבוי? התוכנית, ההזמנות והרשימות הנוכחיות יוחלפו.')) return;
+      act({ id: uid(), type: 'restore', value: t, ...(connected ? { base: initialTrip } : {}) });
       notify('הטיול שוחזר מהגיבוי');
       setModal(null);
     } catch {
@@ -640,7 +645,7 @@ export default function TripApp() {
               ))}
             </nav>
             <div className="topbar-right">
-              <Status state={status} retry={retry} />
+              <Status state={status} connected={connected} retry={() => setModal({ type: 'sync' })} />
               <button className="icon-button" aria-label="שיתוף התוכנית המעודכנת" onClick={shareTrip}>
                 <Share2 size={18} />
               </button>
@@ -658,6 +663,9 @@ export default function TripApp() {
             </div>
           </div>
         </header>
+        {!connected && status !== 'loading' && <div className="connection-banner" role="status"><Cloud size={16} /><span>המכשיר הזה עוד לא מחובר לטיול המשותף. מה שכבר הוספתם כאן יישמר.</span><button onClick={() => setModal({ type: 'sync' })}>חיבור לטיול</button></div>}
+        {connected && conflicts.length > 0 && <div className="connection-banner" role="status"><Info size={16} /><span>{conflicts.length} שינויים דורשים בחירה. שתי הגרסאות שמורות.</span><button onClick={() => setModal({ type: 'sync' })}>בדיקת השינויים</button></div>}
+        {connected && status === 'offline' && <div className="connection-banner" role="status"><CloudOff size={16} /><span>השינויים שמורים במכשיר וממתינים לחיבור.</span><button onClick={retry}>ניסיון נוסף</button></div>}
         {status === 'error' && (
           <div className="connection-banner" role="status">
             <CloudOff size={16} />
@@ -813,7 +821,7 @@ export default function TripApp() {
                         <button
                           className="icon-button small"
                           aria-label="עריכת כותרת היום"
-                          onClick={() => setModal({ type: 'day' })}
+                          onClick={() => setModal({ type: 'day', base: { title: trip.days[day], notes: trip.dayNotes[day] } })}
                         >
                           <Pencil size={14} />
                         </button>
@@ -998,7 +1006,7 @@ export default function TripApp() {
                       </div>
                     </div>
                   )}
-                  <button className="notes-card" onClick={() => setModal({ type: 'notes' })}>
+                  <button className="notes-card" onClick={() => setModal({ type: 'notes', value: trip.notes })}>
                     <span>
                       <NotebookPen size={17} />
                       <strong>פתק בינינו</strong>
@@ -1151,15 +1159,17 @@ export default function TripApp() {
               <div className="section-line">
                 <FileText size={19} />
                 <h2>המסמכים שלנו</h2>
-                <span>קבצים אישיים, במכשיר הזה בלבד</span>
+                <span>{connected ? 'המסמכים שלנו, זמינים מכל מכשיר מחובר' : 'קבצים אישיים, במכשיר הזה בלבד'}</span>
               </div>
               <div className="document-grid">
                 {documents.map(({ id, label }) => (
                   <article className="document-card" key={id}>
                     <FileText size={25} />
                     <strong>{label}</strong>
-                    <small>{docs[id] ? 'PDF · שמור במכשיר הזה' : 'PDF · להוספה למכשיר'}</small>
+                    <small>{docs[id] ? (connected ? 'PDF · שמור בטיול' : 'PDF · שמור במכשיר הזה') : 'PDF · להוספה'}</small>
+                    {fileConflicts[id] && <small>נשמרה גם גרסה אחרת במכשיר הזה — אפשר לפתוח ולבחור</small>}
                     <div>
+                      {fileConflicts[id] && <><button className="text-button" onClick={() => openDocument(id, true).catch(() => notify('הקובץ המקומי לא זמין'))}>העותק במכשיר</button><button className="text-button" onClick={() => { if (window.confirm('להחליף את המסמך המשותף בעותק מהמכשיר הזה? הגרסה הקודמת תישמר.')) shareLocalDocument(id).then(loadDocs).catch(() => notify('המסמך ממתין לחיבור')); }}>שיתוף העותק במכשיר</button></>}
                       {docs[id] && (
                         <button
                           className="text-button"
@@ -1190,7 +1200,7 @@ export default function TripApp() {
               </div>
               <p className="help-text">
                 <ShieldCheck size={14} />
-                קובצי PDF נשמרים רק בדפדפן הזה. הם אינם מתפרסמים באתר ואינם נכללים בקישור השיתוף או בגיבוי התוכנית.
+                {connected ? 'המסמכים נגישים דרך קישור הטיול המשותף. החלפת מסמך שומרת גם את הגרסה הקודמת בהיסטוריה.' : 'המסמכים נשמרים כאן. חיבור עם קישור הטיול יאפשר להעביר אותם גם למכשירים האחרים.'}
               </p>
             </>
           )}
@@ -1232,6 +1242,7 @@ export default function TripApp() {
                                     id: uid(),
                                     type: 'check',
                                     value: { ...c, done: e.target.checked },
+                                    base: c,
                                   })
                                 }
                               />
@@ -1243,7 +1254,7 @@ export default function TripApp() {
                             <button
                               className="icon-button small"
                               aria-label={'מחיקת ' + c.text}
-                              onClick={() => act({ id: uid(), type: 'deleteCheck', value: c.id })}
+                              onClick={() => act({ id: uid(), type: 'deleteCheck', value: c.id, base: c })}
                             >
                               <X size={14} />
                             </button>
@@ -1271,7 +1282,7 @@ export default function TripApp() {
                     </p>
                     <button
                       className="button secondary"
-                      onClick={() => setModal({ type: 'notes' })}
+                      onClick={() => setModal({ type: 'notes', value: trip.notes })}
                     >
                       <Pencil size={15} />
                       {trip.notes ? 'עריכת הפתק' : 'כותבים משהו'}
@@ -1282,7 +1293,7 @@ export default function TripApp() {
                       <h2>ביטוח, שיהיה בשלוף</h2>
                       <ShieldCheck size={21} />
                     </div>
-                    <p>האישורים האישיים נשמרים רק במכשיר שמוסיפים אליו.</p>
+                    <p>{connected ? 'האישורים האישיים זמינים בכל מכשיר שמחובר לטיול.' : 'האישורים האישיים נשמרים כאן עד שמתחברים לטיול המשותף.'}</p>
                     <div className="insurance-dates">
                       <CalendarDays size={16} />
                       <strong>חוזרים ב־24 בנובמבר</strong>
@@ -1290,7 +1301,7 @@ export default function TripApp() {
                     </div>
                     <div className="insurance-links">
                       <button className="text-button" onClick={() => changeTab('bookings')}>
-                        למסמכים במכשיר הזה
+                        למסמכי הטיול
                         <ArrowUpLeft size={14} />
                       </button>
                     </div>
@@ -1413,8 +1424,8 @@ export default function TripApp() {
           onClose={() => setModal(null)}
           onCopy={copy}
           onDone={stop => act({ id: uid(), type: 'done', value: { id: stop.id, done: !stop.done } })}
-          onSave={(value) => {
-            act({ id: uid(), type: 'stop', value });
+          onSave={(value, base) => {
+            act({ id: uid(), type: 'stop', value, base });
             setModal({ type: 'stop', value });
             notify('העצירה נשמרה בתוכנית');
           }}
@@ -1422,7 +1433,7 @@ export default function TripApp() {
             act({ id: uid(), type: 'move', value });
             notify('סדר העצירות עודכן');
           }}
-          onDelete={(stop) => setModal({ type: 'delete', kind: 'stop', id: stop.id, title: stop.title })}
+          onDelete={(stop) => setModal({ type: 'delete', kind: 'stop', id: stop.id, title: stop.title, base: stop })}
         />
       )}
       {modal?.type === 'booking' && (
@@ -1430,12 +1441,12 @@ export default function TripApp() {
           booking={modal.value}
           kind={modal.kind}
           onClose={() => setModal(null)}
-          onSave={(value) => {
-            act({ id: uid(), type: 'booking', value });
+          onSave={(value, base) => {
+            act({ id: uid(), type: 'booking', value, base });
             setModal(null);
             notify('פרטי ההזמנה נשמרו');
           }}
-          onDelete={(b) => setModal({ type: 'delete', kind: 'booking', id: b.id, title: b.title })}
+          onDelete={(b) => setModal({ type: 'delete', kind: 'booking', id: b.id, title: b.title, base: b })}
         />
       )}
       {modal?.type === 'day' && (
@@ -1447,6 +1458,7 @@ export default function TripApp() {
               id: uid(),
               type: 'day',
               value: { day, title: String(f.get('title')).trim(), notes: String(f.get('notes')) },
+              base: modal.base,
             });
             setModal(null);
             notify('התוכנית של היום עודכנה');
@@ -1465,7 +1477,7 @@ export default function TripApp() {
           title="משהו לזכור יחד"
           onClose={() => setModal(null)}
           onSubmit={(f) => {
-            act({ id: uid(), type: 'notes', value: String(f.get('notes')) });
+            act({ id: uid(), type: 'notes', value: String(f.get('notes')), base: modal.value ?? trip.notes });
             setModal(null);
             notify('הפתק שלנו נשמר');
           }}
@@ -1511,11 +1523,9 @@ export default function TripApp() {
             <button
               className="button danger"
               onClick={() => {
-                act({
-                  id: uid(),
-                  type: modal.kind === 'stop' ? 'deleteStop' : 'deleteBooking',
-                  value: modal.id,
-                });
+                act(modal.kind === 'stop'
+                  ? { id: uid(), type: 'deleteStop', value: modal.id, base: modal.base as Stop }
+                  : { id: uid(), type: 'deleteBooking', value: modal.id, base: modal.base as Booking });
                 setModal(null);
                 notify('הפריט נמחק מהתוכנית');
               }}
@@ -1530,8 +1540,8 @@ export default function TripApp() {
         </Dialog>
       )}
       {modal?.type === 'share' && (
-        <Dialog title="התוכנית שלנו, בקישור אחד" eyebrow="PASS IT ON" onClose={() => setModal(null)}>
-          <p className="share-description">הקישור מכיל עותק של התוכנית, ההזמנות, ההערות והרשימות כפי שהן עכשיו. קובצי PDF נשארים במכשיר.</p>
+        <Dialog title={connected ? "הטיול שלנו, מעודכן ביחד" : "התוכנית שלנו, בקישור אחד"} eyebrow="PASS IT ON" onClose={() => setModal(null)}>
+          <p className="share-description">{connected ? 'פותחים את הקישור פעם אחת בכל מכשיר. מאותו רגע התוכנית, ההזמנות, הרשימות והמסמכים המשותפים מתעדכנים אצל שנינו.' : 'הקישור מכיל עותק של התוכנית כפי שהיא עכשיו. כדי לקבל עדכונים אוטומטיים, מתחברים לטיול המשותף.'}</p>
           <Field label="הקישור לתוכנית המעודכנת" wide>
             <input className="share-url" dir="ltr" readOnly value={shareUrl} onFocus={e => e.target.select()} />
           </Field>
@@ -1539,19 +1549,20 @@ export default function TripApp() {
             <button className="button primary" onClick={() => copy(shareUrl)}><Share2 size={16} />העתקת הקישור</button>
             {typeof navigator.share === 'function' && <button className="button secondary" onClick={() => navigator.share({ title: 'Andiamo · התוכנית שלנו לרומא', url: shareUrl }).catch(() => {})}>שליחה…</button>}
           </div>
-          <p className="help-text">כל מי שמקבל את הקישור יכול לקרוא את הפרטים שבתוכו. העריכות הבאות לא יופיעו בקישור הזה — משתפים שוב כשמעדכנים.</p>
+          <p className="help-text">{connected ? 'הקישור מאפשר לצפות ולערוך את הטיול ואת המסמכים האישיים. משתפים אותו רק ביניכם.' : 'זהו עותק של התוכנית. שינויים נוספים דורשים קישור חדש.'}</p>
         </Dialog>
       )}
       {modal?.type === 'sharedTrip' && (
         <Dialog title="הגיעה תוכנית מעודכנת" eyebrow="CIAO, US" onClose={() => { setModal(null); history.replaceState(null, '', '#plan'); }}>
-          <p className="share-description">{modal.value.stops.length} עצירות, {modal.value.bookings.length} הזמנות ושישה ימים ברומא. קבלת התוכנית תחליף את התוכנית השמורה במכשיר הזה. מסמכי PDF אישיים יישארו כאן.</p>
+          <p className="share-description">{modal.value.stops.length} עצירות, {modal.value.bookings.length} הזמנות ושישה ימים ברומא. {connected ? 'קבלת התוכנית תמזג את השינויים לטיול המשותף. עריכות סותרות יישמרו לבדיקה.' : 'קבלת התוכנית תחליף את התוכנית השמורה במכשיר הזה. מסמכי PDF אישיים יישארו כאן.'}</p>
           <p className="help-text">כדי לשמור גם את העריכות שלכם, אפשר להוריד גיבוי לפני ההחלפה.</p>
           <div className="form-actions">
-            <button className="button primary" onClick={() => { act({ id: uid(), type: 'restore', value: modal.value }); setModal(null); history.replaceState(null, '', '#plan'); notify('התוכנית המעודכנת נשמרה במכשיר'); }}><Check size={16} />קבלת התוכנית</button>
+            <button className="button primary" onClick={() => { act({ id: uid(), type: 'restore', value: modal.value, ...(connected ? { base: initialTrip } : {}) }); setModal(null); history.replaceState(null, '', '#plan'); notify('התוכנית המעודכנת נשמרה במכשיר'); }}><Check size={16} />קבלת התוכנית</button>
             <button className="button secondary" onClick={exportTrip}>גיבוי התוכנית הנוכחית</button>
           </div>
         </Dialog>
       )}
+      {modal?.type === 'sync' && <SharedSettings connected={connected} conflicts={conflicts} retry={retry} notify={notify} onClose={() => setModal(null)} />}
       {modal?.type === 'settings' && (
         <Dialog
           title="הטיול שלנו, מסודר"
@@ -1566,6 +1577,7 @@ export default function TripApp() {
             </div>
           </div>
           <div className="settings-actions">
+            <button onClick={() => setModal({ type: 'sync' })}><Cloud size={19} /><span><strong>הטיול שלנו, בכל מכשיר</strong><small>חיבור מכשירים, שינויים שמורים והיסטוריה</small></span><ChevronLeft size={16} /></button>
             <button onClick={() => {
               const raw = localStorage.getItem(RECOVERY_STORAGE_KEY);
               if (raw === null) { notify('הגיבוי האוטומטי ייווצר בשמירה הבאה של שינוי'); return; }
@@ -1612,8 +1624,7 @@ export default function TripApp() {
           <div className="settings-note">
             <ShieldCheck size={18} />
             <p>
-              האתר פתוח לצפייה. העריכות והמסמכים האישיים נשמרים במכשיר הזה בלבד. כדי להעביר
-              שינויים בינינו, שולחים קישור מעודכן או קובץ גיבוי. אין סנכרון אוטומטי בין מכשירים.
+              {connected ? 'המכשיר מחובר לטיול המשותף. שינויים נשמרים בענן, עם עותק במכשיר ותור לשינויים בזמן ניתוק. קוד ועיצוב מתעדכנים בלי לאפס את המידע.' : 'המכשיר הזה שומר עותק מקומי. פותחים את קישור הטיול המשותף כדי לסנכרן עם המכשירים האחרים. התוכנית שכבר הוספתם כאן תישמר.'}
             </p>
           </div>
           <p className="install-note">
@@ -1686,7 +1697,7 @@ function StopSheet({ stop, startEditing, day, trip, onClose, onSave, onDelete, o
   day: number;
   trip: Trip;
   onClose: () => void;
-  onSave: (stop: Stop) => void;
+  onSave: (stop: Stop, base?: Stop) => void;
   onDelete: (stop: Stop) => void;
   onMove: (value: { id: string; direction: 'up' | 'down' }) => void;
   onDone: (stop: Stop) => void;
@@ -1712,7 +1723,7 @@ function StopSheet({ stop, startEditing, day, trip, onClose, onSave, onDelete, o
       <div ref={body} className="stop-sheet-content" key={editing ? 'edit' : 'view'}>
         {editing ? <StopForm stop={stop} day={day} trip={trip}
           onClose={stop ? showDetails : onClose}
-          onSave={value => { onSave(value); showDetails(); }}
+          onSave={(value, base) => { onSave(value, base); showDetails(); }}
           onDelete={onDelete} onMove={onMove} />
         : stop && <StopDetails stop={stop} trip={trip} onEdit={showEditor} onDone={() => onDone(stop)} onCopy={onCopy} />}
       </div>
@@ -1732,12 +1743,13 @@ function StopForm({
   day: number;
   trip: Trip;
   onClose: () => void;
-  onSave: (s: Stop) => void;
+  onSave: (s: Stop, base?: Stop) => void;
   onDelete: (s: Stop) => void;
   onMove: (s: { id: string; direction: 'up' | 'down' }) => void;
 }) {
   const [error, setError] = useState('');
   const [loc, setLoc] = useState(stop?.location || '');
+  const original = useRef(stop);
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
@@ -1777,7 +1789,7 @@ function StopForm({
       setError('כדאי לבדוק את הפרטים. קישורים צריכים להתחיל ב־https://, וקואורדינטות הן מספרים.');
       return;
     }
-    onSave(r.data);
+    onSave(r.data, original.current);
   };
   const Icon = icons[stop?.category || 'sight'];
   return (
@@ -1956,7 +1968,7 @@ function StopForm({
               className="icon-button delete-action"
               type="button"
               aria-label="מחיקת העצירה"
-              onClick={() => onDelete(stop)}
+              onClick={() => onDelete(original.current || stop)}
             >
               <Trash2 size={17} />
             </button>
@@ -1975,11 +1987,12 @@ function BookingForm({
   booking?: Booking;
   kind?: Booking['type'];
   onClose: () => void;
-  onSave: (b: Booking) => void;
+  onSave: (b: Booking, base?: Booking) => void;
   onDelete: (b: Booking) => void;
 }) {
   const [type, setType] = useState<Booking['type']>(b?.type || kind || 'other'),
     [error, setError] = useState('');
+  const original = useRef(b);
   const flight = type === 'flight';
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -2011,7 +2024,7 @@ function BookingForm({
       setError('תאריך הסיום צריך להיות ביום ההתחלה או אחריו');
       return;
     }
-    onSave(r.data);
+    onSave(r.data, original.current);
   };
   return (
     <Dialog
@@ -2122,7 +2135,7 @@ function BookingForm({
               className="icon-button delete-action"
               type="button"
               aria-label="מחיקת ההזמנה"
-              onClick={() => onDelete(b)}
+              onClick={() => onDelete(original.current || b)}
             >
               <Trash2 size={17} />
             </button>

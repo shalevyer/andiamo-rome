@@ -1,0 +1,11 @@
+{
+  "name": "andiamo-sync",
+  "main": "entry.ts",
+  "compatibility_date": "2025-11-25",
+  "workers_dev": true,
+  "preview_urls": false,
+  "durable_objects": { "bindings": [{ "name": "TRIP", "class_name": "SharedTrip" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SharedTrip"] }],
+  "vars": { "ALLOWED_ORIGINS": "https://shalevyer.github.io" },
+  "observability": { "enabled": false }
+}

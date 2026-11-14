@@ -66,30 +66,31 @@ export const tripSchema = z.object({
   receipts: z.array(short).max(100),
 });
 export const opSchema = z.discriminatedUnion('type', [
-  z.object({ id: short, type: z.literal('stop'), value: stopSchema }),
-  z.object({ id: short, type: z.literal('deleteStop'), value: short }),
+  z.object({ id: short, type: z.literal('stop'), value: stopSchema, base: stopSchema.optional() }),
+  z.object({ id: short, type: z.literal('deleteStop'), value: short, base: stopSchema.optional() }),
   z.object({
     id: short,
     type: z.literal('done'),
     value: z.object({ id: short, done: z.boolean() }),
   }),
-  z.object({ id: short, type: z.literal('booking'), value: bookingSchema }),
-  z.object({ id: short, type: z.literal('deleteBooking'), value: short }),
-  z.object({ id: short, type: z.literal('check'), value: checkSchema }),
-  z.object({ id: short, type: z.literal('deleteCheck'), value: short }),
+  z.object({ id: short, type: z.literal('booking'), value: bookingSchema, base: bookingSchema.optional() }),
+  z.object({ id: short, type: z.literal('deleteBooking'), value: short, base: bookingSchema.optional() }),
+  z.object({ id: short, type: z.literal('check'), value: checkSchema, base: checkSchema.optional() }),
+  z.object({ id: short, type: z.literal('deleteCheck'), value: short, base: checkSchema.optional() }),
   z.object({
     id: short,
     type: z.literal('move'),
     value: z.object({ id: short, direction: z.enum(['up', 'down']) }),
   }),
-  z.object({ id: short, type: z.literal('notes'), value: note }),
+  z.object({ id: short, type: z.literal('notes'), value: note, base: note.optional() }),
   z.object({
     id: short,
     type: z.literal('day'),
     value: z.object({ day: z.number().int().min(0).max(5), title: short.min(1), notes: note }),
+    base: z.object({ title: short, notes: note }).optional(),
   }),
   z.object({ id: short, type: z.literal('start'), value: date }),
-  z.object({ id: short, type: z.literal('restore'), value: tripSchema }),
+  z.object({ id: short, type: z.literal('restore'), value: tripSchema, base: tripSchema.optional() }),
 ]);
 export type Stop = z.infer<typeof stopSchema>;
 export type Booking = z.infer<typeof bookingSchema>;

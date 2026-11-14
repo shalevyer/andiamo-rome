@@ -1,17 +1,27 @@
 # Andiamo · Rome
 
-A Hebrew RTL trip companion for Shalev and Mia, November 18–23, 2026.
+A Hebrew RTL trip companion for Shalev and Mia, November 18–23, 2026. The GitHub Pages app includes the itinerary, flights, accommodation, maps, checklists, notes and calendar export. It uses Google Sans, a neutral palette and subtle Art Nouveau details. Mobile dialogs are bottom sheets; events open in a detail view with a separate edit action. Dropdowns use native HTML controls.
 
-This public GitHub Pages edition includes the itinerary, flight schedule, accommodation information, map, checklists, notes and calendar export. It preserves the neutral design, Google Sans and subtle Art Nouveau details.
+## Shared trip
 
-Events open in a read-only detail view with navigation, completion and an explicit edit action. On mobile, dialogs open as bottom sheets with independent scrolling and a drag handle for dismissal.
+Open the trip invitation once on each device. The share button then copies the same live invitation. Mia does not need a Cloudflare or Wix account. The public URL without an invitation remains an independent local copy. The invitation grants read/write access to the shared itinerary and personal PDFs; share it only with the travelers.
 
-Edits stay in this browser. “Share updated trip” creates a snapshot link; the recipient reviews it before replacing their saved plan. Later changes require a new link. JSON backup and restore are also available. There is no automatic cross-device sync.
+The frontend polls the authenticated Cloudflare Worker every four seconds while visible, and reconnects on focus or when the network returns. Each change is journaled locally and saved in an IndexedDB outbox before it is sent. Unique operation IDs prevent duplicate retries. The backend merges individual fields atomically. Edits to the same field are preserved for explicit review, and deletion tombstones prevent stale edits from bringing items back.
 
-The local storage key stays stable across deployments. Opening a new build only reads existing data. Before each save, the previous exact saved copy is kept as an automatic recovery backup, available in settings. Unreadable originals are retained separately instead of being reset. Changes in another tab of the same browser refresh the view; cross-device sync still requires a connected backend.
+The first connection archives the exact previous browser copy, then merges its changes against the original itinerary. It never replaces the shared trip wholesale. JSON imports and older snapshot invitations follow the same conflict-aware merge path when connected. Settings include previous trip versions, pre-connection backups and exports of pending or conflicting edits.
 
-PDFs added in the app stay in this browser's IndexedDB. They are not uploaded, included in snapshot links or JSON backups, or committed to this repository. Original booking codes, personal travel documents, insurance certificates and runtime credentials are excluded from this public edition. Clearing site data removes locally saved edits and documents.
+PDFs use conditional uploads, authenticated downloads and immutable version history. Existing local PDFs are preserved and migrated; conflicting versions require a choice. PDFs are not included in JSON trip backups or committed to GitHub. Previously opened PDFs are cached in IndexedDB for offline access.
 
-## Development
+## Data persistence
 
-Use Node.js 22 or newer, run `npm install`, `npm run build`, then `npm run dev`. Run `npm test` for sharing and public bundle checks. The generated `docs/` directory is the GitHub Pages publishing source on the `gh-pages` branch. Do not add private documents or keys to source or build output.
+The stable browser keys and database names must not change between builds. On the backend, preserve the Worker name, Durable Object binding/class and object identity `rome-2026-v1`. The schema only creates missing tables and inserts the initial trip when no trip exists. Deploying code never runs an overwrite/reset migration. Accepted trip revisions, rejected conflict payloads, idempotency records, deletion tombstones and prior PDF versions remain in the shared database.
+
+The local mirror keeps the prior exact saved bytes before writing. Unreadable originals are archived. Storage failures leave the prior saved trip intact. Clearing a browser's site data removes its access link, offline edits and local PDFs; already synchronized data remains in Cloudflare. Reopen the invitation to reconnect.
+
+## Development and deployment
+
+Use Node.js 22+, `npm install`, `npm run build`, then `npm run dev`. The generated `docs/` directory is published on the `gh-pages` branch. `npm test` checks snapshot links, public bundle hygiene, service-worker versioning and local recovery. Run TypeScript with `tsc --noEmit`.
+
+The backend is in `backend/entry.ts`; deploy with Wrangler using `backend/wrangler.jsonc`. The runtime secret `TRIP_KEY_SHA256` contains only the SHA-256 hash of the shared invitation key. Never commit invitation keys, OAuth credentials, private PDFs, local databases or migration exports. Production CORS allows only the GitHub Pages origin.
+
+For local end-to-end testing, set `ANDIAMO_SYNC_URL=http://127.0.0.1:8787` for the frontend build, configure the local Worker secret and origins in ignored `backend/.dev.vars`, and start Wrangler locally. `scripts/test-sync.mjs` exercises two independent HTTP clients, field conflicts, deletions, retry receipts, file versions and history against localhost only. Its `--after-restart` mode verifies exact database persistence. Local access fixtures live in ignored `work/`. Always rebuild with the default production endpoint before publishing.

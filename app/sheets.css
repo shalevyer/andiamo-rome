@@ -53,6 +53,18 @@
 .detail-completion > span svg { opacity: 0; }
 .detail-completion.is-done > span { background: var(--charcoal); border-color: var(--charcoal); color: white; }
 .detail-completion.is-done > span svg { opacity: 1; }
+.shared-actions { display: flex; gap: 9px; flex-wrap: wrap; margin: 16px 0; }
+.shared-actions .button { flex: 1; min-height: 46px; }
+.shared-section { padding-block: 20px; border-top: 1px solid var(--line); margin-top: 15px; }
+.shared-section summary { cursor: pointer; font-size: 15px; font-weight: 500; min-height: 34px; }
+.shared-section h3 { font-size: 17px; font-weight: 500; }
+.shared-join { display: grid; gap: 14px; margin-top: 15px; }
+.revision-list { max-height: 260px; overflow: auto; margin-top: 15px; }
+.revision-list > button { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 13px 0; border-bottom: 1px solid var(--line); text-align: start; font-size: 13px; }
+.revision-list small { display: block; color: var(--muted); font-size: 11px; margin-top: 4px; }
+.sync-conflict { padding: 16px; border: 1px solid var(--line); border-radius: 12px; margin-top: 14px; }
+.sync-conflict p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.9; font-size: 13px; margin-top: 8px; }
+.sync-conflict strong { font-size: 14px; font-weight: 500; }
 @keyframes detail-content-in { from { opacity: 0; } to { opacity: 1; } }
 
 @media (max-width: 700px) {

@@ -7,7 +7,7 @@ await build({
   entryPoints: ['app/client.tsx'], bundle: true, outfile: 'work/client/app.js',
   minify: true, format: 'esm', jsx: 'automatic',
   external: ['./google-sans-hebrew.woff2', './google-sans-latin.woff2'],
-  define: { 'process.env.NODE_ENV': '"production"' },
+  define: { 'process.env.NODE_ENV': '"production"', __SYNC_URL__: JSON.stringify(process.env.ANDIAMO_SYNC_URL || 'https://andiamo-sync.shalev46.workers.dev') },
   target: ['es2022'], legalComments: 'none',
 });
 const hash = createHash('sha256').update(await readFile('work/client/app.js')).update(await readFile('work/client/app.css')).update(await readFile('public/sw.js')).update(await readFile(new URL(import.meta.url))).digest('hex').slice(0, 12);
@@ -35,4 +35,4 @@ await writeFile('docs/index.html', `<!doctype html>
 <link rel="stylesheet" href="./app.css?v=${hash}"></head>
 <body><div id="root"><p style="font-family:Arial,sans-serif;text-align:center;padding:60px;color:#3a352f">עוד רגע, יוצאים לרומא…</p></div>
 <script type="module" src="./app.js?v=${hash}"></script></body></html>`);
-console.log('Built public app in docs/ — no backend, credentials or bundled PDFs.');
+console.log('Built app shell in docs/ — no credentials or bundled PDFs.');

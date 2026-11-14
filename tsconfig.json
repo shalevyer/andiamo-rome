@@ -21,7 +21,8 @@
   },
   "include": [
     "app/**/*.ts",
-    "app/**/*.tsx"
+    "app/**/*.tsx",
+    "backend/**/*.ts"
   ],
   "exclude": [
     "node_modules",
