@@ -10,7 +10,7 @@ await build({
   define: { 'process.env.NODE_ENV': '"production"' },
   target: ['es2022'], legalComments: 'none',
 });
-const hash = createHash('sha256').update(await readFile('work/client/app.js')).update(await readFile('work/client/app.css')).update(await readFile('public/sw.js')).digest('hex').slice(0, 12);
+const hash = createHash('sha256').update(await readFile('work/client/app.js')).update(await readFile('work/client/app.css')).update(await readFile('public/sw.js')).update(await readFile(new URL(import.meta.url))).digest('hex').slice(0, 12);
 await rm('docs', { recursive: true, force: true });
 await mkdir('docs', { recursive: true });
 for (const name of ['google-sans-OFL.txt', 'google-sans-hebrew.woff2', 'google-sans-latin.woff2', 'rome-warm.jpg', 'favicon.svg']) {
@@ -26,7 +26,7 @@ await writeFile('docs/index.html', `<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#faf9f6"><meta name="robots" content="noindex,nofollow">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Andiamo">
-<meta name="referrer" content="no-referrer"><title>Andiamo · רומא, רק שנינו</title>
+<meta name="referrer" content="strict-origin-when-cross-origin"><title>Andiamo · רומא, רק שנינו</title>
 <link rel="icon" href="./favicon.svg"><link rel="apple-touch-icon" href="./favicon.svg">
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="preload" href="./google-sans-hebrew.woff2" as="font" type="font/woff2" crossorigin>

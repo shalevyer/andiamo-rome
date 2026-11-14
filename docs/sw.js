@@ -1,9 +1,9 @@
 const PREFIX = 'andiamo-public-' + new URL(self.registration.scope).pathname;
-const CACHE = PREFIX + '3e6dd0fd1bcb';
+const CACHE = PREFIX + '858a0497f2e1';
 const base = self.registration.scope;
 const asset = name => new URL(name, base).href;
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(['./', 'app.js?v=3e6dd0fd1bcb', 'app.css?v=3e6dd0fd1bcb', 'rome-warm.jpg', 'favicon.svg', 'google-sans-hebrew.woff2', 'google-sans-latin.woff2'].map(asset))).then(() => self.skipWaiting()));
+  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(['./', 'app.js?v=858a0497f2e1', 'app.css?v=858a0497f2e1', 'rome-warm.jpg', 'favicon.svg', 'google-sans-hebrew.woff2', 'google-sans-latin.woff2'].map(asset))).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', event => {
   event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key.startsWith(PREFIX) && key !== CACHE).map(key => caches.delete(key)))).then(() => self.clients.claim()));
@@ -13,7 +13,7 @@ self.addEventListener('fetch', event => {
   const url = new URL(request.url);
   if (request.method !== 'GET' || url.origin !== self.location.origin || !url.href.startsWith(base)) return;
   if (request.mode === 'navigate') {
-    event.respondWith(fetch(request).then(response => {
+    event.respondWith(fetch(request, { cache: 'no-store' }).then(response => {
       if (response.ok) { const copy = response.clone(); caches.open(CACHE).then(cache => cache.put(asset('./'), copy)); }
       return response;
     }).catch(() => caches.open(CACHE).then(cache => cache.match(asset('./')))));
