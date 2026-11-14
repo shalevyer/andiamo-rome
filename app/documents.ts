@@ -41,6 +41,23 @@ async function write(values: Record<string, unknown>) {
     });
   } finally { db.close(); }
 }
+async function updateMeta(id: string, expected: Meta, next: Meta, extra: Record<string, unknown> = {}) {
+  const db = await database();
+  try {
+    return await new Promise<boolean>((resolve, reject) => {
+      const tx = db.transaction('pdfs', 'readwrite'), store = tx.objectStore('pdfs');
+      let changed = false;
+      const request = store.get('meta:' + id);
+      request.onsuccess = () => {
+        if (JSON.stringify(request.result || {}) !== JSON.stringify(expected)) return;
+        store.put(next, 'meta:' + id);
+        for (const [key, value] of Object.entries(extra)) store.put(value, key);
+        changed = true;
+      };
+      tx.oncomplete = () => resolve(changed); tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error);
+    });
+  } finally { db.close(); }
+}
 export async function documentAvailability() {
   return Object.fromEntries(await Promise.all(documents.map(async ({ id }) => [id, !!remote.find(d => d.id === id)?.version || !!await read<Blob>(id)])));
 }
@@ -50,13 +67,21 @@ export async function documentConflicts() {
 export async function saveDocument(id: string, file: File) {
   if (!documents.some(d => d.id === id) || file.size > 10 * 1024 * 1024 ||
       new TextDecoder().decode(await file.slice(0, 5).arrayBuffer()) !== '%PDF-') throw Error('Invalid PDF');
-  const previous = await read<Blob>(id), meta = await read<Meta>('meta:' + id);
-  const values: Record<string, unknown> = { [id]: file, ['meta:' + id]: {
-    migrated: isConnected(), version: meta?.version,
-    pending: { id: crypto.randomUUID(), base: remote.find(d => d.id === id)?.version || meta?.version || '', digest: await digestFile(file) },
-  } };
-  if (previous) values['archive:' + id + ':' + crypto.randomUUID()] = previous;
-  await write(values);
+  const digest = await digestFile(file), operationId = crypto.randomUUID();
+  const db = await database();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction('pdfs', 'readwrite'), store = tx.objectStore('pdfs');
+      const previous = store.get(id), metadata = store.get('meta:' + id);
+      metadata.onsuccess = () => {
+        const meta = metadata.result as Meta | undefined;
+        if (previous.result) store.put(previous.result, 'archive:' + id + ':' + operationId);
+        store.put(file, id);
+        store.put({ migrated: isConnected(), version: meta?.version, pending: { id: operationId, base: remote.find(d => d.id === id)?.version || meta?.version || '', digest } }, 'meta:' + id);
+      };
+      tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error);
+    });
+  } finally { db.close(); }
   if (isConnected()) await synchronizeDocuments(remote).catch(() => {});
 }
 export function synchronizeDocuments(documents: CloudDocument[]) {
@@ -73,20 +98,23 @@ async function synchronizeAll() {
     const current = remote.find(d => d.id === id);
     if (local && !meta.migrated) {
       const digest = await digestFile(local);
-      meta = { migrated: true, version: current?.version || '', ...(current?.digest === digest ? {} : { pending: { id: crypto.randomUUID(), base: '', digest } }) };
-      await write({ ['meta:' + id]: meta });
+      const next = { migrated: true, version: current?.version || '', ...(current?.digest === digest ? {} : { pending: { id: crypto.randomUUID(), base: '', digest } }) };
+      if (!await updateMeta(id, meta, next)) continue;
+      meta = next;
     }
     if (meta.pending && !meta.conflict && local) {
+      if (await digestFile(local) !== meta.pending.digest) continue;
       const response = await cloudRequest('/v1/documents?id=' + id, { method: 'PUT', headers: { 'Content-Type': 'application/pdf', 'If-Match': meta.pending.base, 'Idempotency-Key': meta.pending.id }, body: local });
-      if (response.status === 409) await write({ ['meta:' + id]: { ...meta, conflict: true } });
+      if (response.status === 409) await updateMeta(id, meta, { ...meta, conflict: true });
       else if (!response.ok) throw Error('Document waiting for a connection');
       else {
         const uploaded = await response.json() as { version: string; digest: string };
-        await write({ ['meta:' + id]: { migrated: true, version: uploaded.version }, ['cache:' + uploaded.version]: local });
+        await write({ ['cache:' + uploaded.version]: local });
+        await updateMeta(id, meta, { migrated: true, version: uploaded.version });
         remote = [...remote.filter(d => d.id !== id), { id, version: uploaded.version, digest: uploaded.digest, size: local.size }];
       }
     } else if (!meta.pending && current?.version && current.version !== meta.version) {
-      await write({ ['meta:' + id]: { migrated: true, version: current.version } });
+      await updateMeta(id, meta, { migrated: true, version: current.version });
     }
   }
 }
@@ -97,7 +125,8 @@ export async function shareLocalDocument(id: string) {
   remote = snapshot.documents;
   const meta = await read<Meta>('meta:' + id), file = await read<Blob>(id);
   if (!file) throw Error('No local document');
-  await write({ ['meta:' + id]: { migrated: true, pending: { id: crypto.randomUUID(), base: remote.find(d => d.id === id)?.version || '', digest: meta?.pending?.digest || await digestFile(file) } } });
+  const digest = await digestFile(file);
+  if (meta?.pending && meta.pending.digest !== digest || !await updateMeta(id, meta || {}, { migrated: true, pending: { id: crypto.randomUUID(), base: remote.find(d => d.id === id)?.version || '', digest } })) throw Error('המסמך השתנה בינתיים. אפשר לנסות שוב.');
   await synchronizeDocuments(remote);
 }
 export async function openDocument(id: string, localOnly = false, historicalVersion = '') {
@@ -110,7 +139,7 @@ export async function openDocument(id: string, localOnly = false, historicalVers
     if (isConnected() && !localOnly && version) {
       file = await read<Blob>('cache:' + version);
       if (!file) {
-        const response = await cloudRequest('/v1/documents?id=' + id + (historicalVersion ? '&version=' + encodeURIComponent(historicalVersion) : ''));
+        const response = await cloudRequest('/v1/documents?id=' + id + '&version=' + encodeURIComponent(version));
         if (!response.ok) throw Error('Document unavailable');
         file = await response.blob(); await write({ ['cache:' + version]: file });
       }
