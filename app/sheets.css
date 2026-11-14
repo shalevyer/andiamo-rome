@@ -112,3 +112,10 @@
 .numbered-pin .pin-check { display: block; width: 16px; height: 16px; }
 .place-number.is-done { background: var(--charcoal); color: #fff; }
 .visited-key { color: var(--charcoal); font-size: 11px; font-weight: 600; margin-inline-start: 6px; }
+
+.sync-diagnostics { margin-block: 18px; padding: 16px; background: #f4f1eb; border-radius: 12px; }
+.sync-diagnostics dl { margin: 0; display: grid; gap: 10px; }
+.sync-diagnostics dl > div { display: flex; justify-content: space-between; align-items: baseline; gap: 15px; font-size: 12px; }
+.sync-diagnostics dt { color: var(--muted); }
+.sync-diagnostics dd { margin: 0; font-weight: 500; font-variant-numeric: tabular-nums; }
+.sync-build { margin-top: 12px; font-size: 10px; }

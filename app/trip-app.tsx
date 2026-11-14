@@ -403,7 +403,7 @@ function BookingCard({
 }
 
 export default function TripApp() {
-  const { trip, status, mutate, retry, recoveryMessage, connected, conflicts } = useTrip();
+  const { trip, status, mutate, retry, recoveryMessage, connected, conflicts, syncInfo } = useTrip();
   const { weather, unavailable: weatherUnavailable } = useRomeWeather();
   const { stops: locatedStops, retryLocations } = useMapLocations(trip.stops);
   const [tab, setTab] = useState<Tab>('plan'),
@@ -477,6 +477,10 @@ export default function TripApp() {
   const viewDocument = (id: string) => openDocument(id).catch(() => notify('המסמך אינו זמין במכשיר הזה. אפשר להוסיף אותו בהזמנות.'));
   const shareTrip = async () => {
     try {
+      if (connected) {
+        const state = await retry();
+        if (!state || state.pending.length) { setModal({ type: 'sync' }); notify('עוד לא אושר שכל השינויים הגיעו לענן. בדקו את החיבור לפני שיתוף.'); return; }
+      }
       setShareUrl(connected ? invitationLink() : await createTripLink(trip, location.href));
       setModal({ type: 'share' });
     } catch {
@@ -658,7 +662,7 @@ export default function TripApp() {
         </header>
         {!connected && status !== 'loading' && <div className="connection-banner" role="status"><Cloud size={16} /><span>המכשיר הזה עוד לא מחובר לטיול המשותף. מה שכבר הוספתם כאן יישמר.</span><button onClick={() => setModal({ type: 'sync' })}>חיבור לטיול</button></div>}
         {connected && conflicts.length > 0 && <div className="connection-banner" role="status"><Info size={16} /><span>{conflicts.length} שינויים דורשים בחירה. שתי הגרסאות שמורות.</span><button onClick={() => setModal({ type: 'sync' })}>בדיקת השינויים</button></div>}
-        {connected && status === 'offline' && <div className="connection-banner" role="status"><CloudOff size={16} /><span>השינויים שמורים במכשיר וממתינים לחיבור.</span><button onClick={retry}>ניסיון נוסף</button></div>}
+        {connected && status === 'offline' && <div className="connection-banner" role="status"><CloudOff size={16} /><span>{syncInfo.issue || 'השינויים שמורים במכשיר וממתינים לחיבור.'}</span><button onClick={() => setModal({ type: 'sync' })}>בדיקת החיבור</button></div>}
         {status === 'error' && (
           <div className="connection-banner" role="status">
             <CloudOff size={16} />
@@ -1541,7 +1545,7 @@ export default function TripApp() {
           </div>
         </Dialog>
       )}
-      {modal?.type === 'sync' && <SharedSettings connected={connected} conflicts={conflicts} retry={retry} notify={notify} onClose={() => setModal(null)} />}
+      {modal?.type === 'sync' && <SharedSettings connected={connected} conflicts={conflicts} syncInfo={syncInfo} retry={retry} notify={notify} onClose={() => setModal(null)} />}
       {modal?.type === 'settings' && (
         <Dialog
           title="הטיול שלנו, מסודר"
@@ -1571,7 +1575,7 @@ export default function TripApp() {
               <Share2 size={19} />
               <span>
                 <strong>שיתוף התוכנית המעודכנת</strong>
-                <small>קישור עם התוכנית כפי שהיא עכשיו, ללא קובצי PDF</small>
+                <small>{connected ? 'קישור קבוע לטיול, עם עדכונים אוטומטיים ומסמכים' : 'עותק מקומי של התוכנית, ללא עדכונים אוטומטיים'}</small>
               </span>
               <ChevronLeft size={16} />
             </button>

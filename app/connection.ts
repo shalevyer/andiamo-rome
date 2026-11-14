@@ -1,10 +1,12 @@
 import { SYNC_URL } from './sync-config';
 
 const ACCESS = 'andiamo-shared-access-v1';
+declare const __APP_BUILD__: string;
+export const APP_BUILD = __APP_BUILD__;
 export function accessKey() { return localStorage.getItem(ACCESS) || ''; }
 export function isConnected() { return !!SYNC_URL && !!accessKey(); }
 export function invitationLink(page = location.href) {
-  const url = new URL(page); url.search = ''; url.hash = 'join=' + accessKey(); return url.href;
+  const url = new URL(page); url.search = ''; url.searchParams.set('v', APP_BUILD); url.hash = 'join=' + accessKey(); return url.href;
 }
 export function acceptInvitation(value: string) {
   let key = value.trim();
@@ -13,6 +15,16 @@ export function acceptInvitation(value: string) {
   localStorage.setItem(ACCESS, key);
   if (location.hash.startsWith('#join=')) history.replaceState(null, '', '#plan');
   window.dispatchEvent(new Event('andiamo-connection'));
+}
+export function listenForInvitations(onError: (error: unknown) => void) {
+  const receive = () => {
+    if (!location.hash.startsWith('#join=')) return;
+    try { acceptInvitation(location.hash.slice(6)); } catch (error) { onError(error); }
+  };
+  window.addEventListener('hashchange', receive);
+  window.addEventListener('pageshow', receive);
+  receive();
+  return () => { window.removeEventListener('hashchange', receive); window.removeEventListener('pageshow', receive); };
 }
 export async function cloudRequest(path: string, init: RequestInit = {}) {
   if (!isConnected()) throw Error('Open the shared trip invitation first');

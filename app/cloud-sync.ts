@@ -1,12 +1,13 @@
 import { initialTrip, tripSchema, type Operation, type Trip } from './model';
-import { cloudRequest, isConnected } from './connection';
+import { cloudRequest, isConnected, accessKey } from './connection';
 import { readLocalTrip, saveLocalTrip, TRIP_STORAGE_KEY } from './local-data';
 import { changesForOperation, diffTrip, projectChanges, type Change, type Conflict, type SyncOperation } from './sync-model';
 
 export type CloudDocument = { id: string; version: string | null; digest: string | null; size: number | null };
 export type CloudSnapshot = { trip: Trip; revision: number; documents: CloudDocument[]; storeId: string };
 type PendingConflict = { operation: SyncOperation; details: Conflict[] };
-export type SyncState = { device: string; server: Trip; revision: number; pending: SyncOperation[]; conflicts: PendingConflict[]; migrated: boolean; originalRaw: string | null; documents: CloudDocument[]; storeId: string };
+export type SyncState = { device: string; server: Trip; revision: number; pending: SyncOperation[]; conflicts: PendingConflict[]; migrated: boolean; originalRaw: string | null; documents: CloudDocument[]; storeId: string; lastSyncedAt?: number };
+export type SyncInfo = { revision: number; events: number; pending: number; lastSyncedAt: number | null; issue: string };
 let databasePromise: Promise<IDBDatabase> | undefined;
 function database() {
   return databasePromise ||= new Promise((resolve, reject) => {
@@ -52,17 +53,20 @@ function acceptSnapshot(state: SyncState, snapshot: CloudSnapshot) {
   if (snapshot.revision < state.revision) return state;
   state.storeId = snapshot.storeId;
   state.server = tripSchema.parse(snapshot.trip); state.revision = snapshot.revision; state.documents = snapshot.documents;
+  state.lastSyncedAt = Date.now();
   return state;
 }
 let running: Promise<SyncState> | undefined;
+let runningKey = '';
 export function synchronize(): Promise<SyncState> {
-  if (running) return running;
-  running = performSync().finally(() => { running = undefined; });
+  if (running) return runningKey === accessKey() ? running : running.catch(() => {}).then(() => synchronize());
+  runningKey = accessKey();
+  running = performSync().finally(() => { running = undefined; runningKey = ''; });
   return running;
 }
 async function performSync() {
   const response = await cloudRequest('/v1/trip');
-  if (!response.ok) throw Error(response.status === 401 ? 'Trip link required' : 'Connection unavailable');
+  if (!response.ok) throw Error('SHARED_HTTP_' + response.status);
   const remote: CloudSnapshot = await response.json();
   let state = await updateSyncState(current => {
     if (!current.migrated) {

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Check, Cloud, Download, Link2, RefreshCw } from 'lucide-react';
 import Dialog from './dialog';
-import { acceptInvitation, cloudRequest, invitationLink } from './connection';
-import { resolveConflict, updateSyncState, type SyncState } from './cloud-sync';
+import { acceptInvitation, cloudRequest, invitationLink, APP_BUILD } from './connection';
+import { resolveConflict, updateSyncState, type SyncState, type SyncInfo } from './cloud-sync';
 import { documents, openDocument } from './documents';
 
 const save = (name: string, value: unknown) => {
@@ -13,8 +13,8 @@ const save = (name: string, value: unknown) => {
 const display = (value: unknown) => value === null ? 'הפריט לא קיים בטיול המשותף' : typeof value === 'string' ? value || 'ללא תוכן' : typeof value === 'boolean' ? value ? 'בוצע' : 'לא בוצע' : typeof value === 'object' && value && 'title' in value ? String(value.title) : JSON.stringify(value);
 const fields: Record<string, string> = { title: 'שם', notes: 'הערות', time: 'שעה', day: 'יום', location: 'מיקום', done: 'סימון ביצוע', order: 'סדר בתוכנית', reference: 'מספר הזמנה', text: 'פריט ברשימה', start: 'תאריכי הטיול', days: 'שם היום', dayNotes: 'הערות היום' };
 
-export default function SharedSettings({ connected, conflicts, retry, notify, onClose }: {
-  connected: boolean; conflicts: SyncState['conflicts']; retry: () => unknown; notify: (text: string) => void; onClose: () => void;
+export default function SharedSettings({ connected, conflicts, syncInfo, retry, notify, onClose }: {
+  connected: boolean; conflicts: SyncState['conflicts']; syncInfo: SyncInfo; retry: () => unknown; notify: (text: string) => void; onClose: () => void;
 }) {
   const [invitation, setInvitation] = useState('');
   const [history, setHistory] = useState<{ revision: number; created: string }[]>([]);
@@ -30,7 +30,14 @@ export default function SharedSettings({ connected, conflicts, retry, notify, on
   }, [connected]);
   const when = (value: string) => new Date(value).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' });
   return <Dialog title="הטיול שלנו, בכל מכשיר" eyebrow="TOGETHER IN ROMA" onClose={onClose}>
-    <p className="share-description">{connected ? 'המכשיר מחובר לאותו טיול. שינויים בתוכנית, בהזמנות וברשימות מתעדכנים אצל שנינו, בדרך כלל בתוך כמה שניות.' : 'פותחים פעם אחת את קישור הטיול המשותף בכל מכשיר. כל מה שכבר הוספתם כאן יישמר ויתמזג עם הטיול.'}</p>
+    <p className="share-description">{connected ? syncInfo.issue ? 'כרגע מוצג העותק שבמכשיר. פרטי החיבור למטה יעזרו לוודא ששנינו רואים את אותו טיול.' : syncInfo.lastSyncedAt ? 'העותק מהענן נטען במכשיר הזה. שינויים בתוכנית, בהזמנות וברשימות מתעדכנים אצל שנינו, בדרך כלל בתוך כמה שניות.' : 'בודקים את החיבור וטוענים את הטיול המשותף.' : 'פותחים פעם אחת את קישור הטיול המשותף בכל מכשיר. כל מה שכבר הוספתם כאן יישמר ויתמזג עם הטיול.'}</p>
+    {connected && <div className="sync-diagnostics" role="status">
+      <dl><div><dt>גרסת התוכנית מהענן</dt><dd>{syncInfo.revision >= 0 ? syncInfo.revision : 'טרם התקבלה'}</dd></div>
+      <div><dt>עצירות בטיול המשותף</dt><dd>{syncInfo.revision >= 0 ? syncInfo.events : '—'}</dd></div>
+      <div><dt>שינויים שממתינים לשליחה</dt><dd>{syncInfo.pending}</dd></div>
+      <div><dt>עדכון מהענן התקבל ב־</dt><dd>{syncInfo.lastSyncedAt ? new Date(syncInfo.lastSyncedAt).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'טרם התקבל'}</dd></div></dl>
+      {syncInfo.issue && <p className="form-error">{syncInfo.issue}</p>}
+    </div>}
     {connected && <div className="shared-actions"><button className="button secondary" onClick={() => { retry(); notify('בודקים שהכול מעודכן'); }}><RefreshCw size={16} />עדכון עכשיו</button><button className="button primary" onClick={() => run(async () => { await navigator.clipboard.writeText(invitationLink()); notify('קישור הטיול הועתק. פותחים אותו גם במכשיר השני.'); })}><Link2 size={16} />העתקת קישור הטיול</button></div>}
     <details className="shared-section" open={!connected}>
       <summary>{connected ? 'חיבור מחדש עם קישור אחר' : 'יש לי קישור לטיול'}</summary>
@@ -53,5 +60,6 @@ export default function SharedSettings({ connected, conflicts, retry, notify, on
     {connected && <details className="shared-section"><summary>גרסאות קודמות של מסמכים</summary><div className="revision-list">{documents.map(doc => <button key={doc.id} onClick={() => run(async () => { const response = await cloudRequest('/v1/document-history?id=' + doc.id); if (!response.ok) throw Error('הגרסאות לא זמינות כרגע'); const data = await response.json() as { versions: { version: string; created: string }[] }; setFiles(data.versions.map(v => ({ ...v, id: doc.id }))); if (!data.versions.length) notify('למסמך הזה עדיין אין גרסאות משותפות'); })}>{doc.label}</button>)}</div>{files.map(file => <button className="text-button" key={file.version} onClick={() => run(() => openDocument(file.id, false, file.version))}>פתיחת הגרסה מ־{when(file.created)}</button>)}</details>}
     {error && <p className="form-error" role="alert">{error}</p>}
     <p className="help-text">קישור הטיול מאפשר לצפות ולערוך גם את המסמכים האישיים. משתפים אותו רק ביניכם.</p>
+    <p className="help-text sync-build">גרסת אפליקציה <bdi>{APP_BUILD}</bdi></p>
   </Dialog>;
 }

@@ -1,19 +1,29 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { initialTrip, opSchema, type Operation, type Trip } from './model';
 import { readLocalTrip, saveLocalTrip, TRIP_STORAGE_KEY, RECOVERY_STORAGE_KEY } from './local-data';
-import { acceptInvitation, isConnected } from './connection';
-import { addOperation, mirrorSharedTrip, synchronize, updateSyncState, visibleTrip, type SyncState } from './cloud-sync';
+import { listenForInvitations, isConnected, accessKey } from './connection';
+import { addOperation, mirrorSharedTrip, synchronize, updateSyncState, visibleTrip, type SyncState, type SyncInfo } from './cloud-sync';
 import { changesForOperation, projectChanges } from './sync-model';
 import { synchronizeDocuments } from './documents';
 
 type Status = 'loading' | 'saved' | 'saving' | 'offline' | 'error';
 const JOURNAL = 'andiamo-unsent-operation-';
+function syncErrorText(error: unknown) {
+  const message = error instanceof Error ? error.message : '';
+  if (message.includes('SHARED_HTTP_401')) return 'קישור הטיול במכשיר הזה לא אושר. פתחו שוב את קישור הטיול המשותף המלא.';
+  if (message.includes('SHARED_HTTP_403')) return 'החיבור לטיול המשותף נחסם. פתחו את הקישור ב־Safari או ב־Chrome.';
+  if (message.includes('store identity')) return 'זהות הטיול בענן השתנתה. העותק במכשיר נשמר ולא הוחלף.';
+  if (error instanceof DOMException && ['QuotaExceededError', 'SecurityError', 'InvalidStateError', 'UnknownError'].includes(error.name)) return 'הדפדפן לא אפשר לפתוח את השמירה המקומית. פתחו את הקישור ב־Safari או ב־Chrome; אל תמחקו נתוני אתר.';
+  return 'לא הצלחנו לאמת את העדכון מול הטיול המשותף. העותק והשינויים במכשיר נשמרו. אפשר לנסות שוב.';
+}
 export function useTrip() {
   const [trip, setTrip] = useState<Trip>(initialTrip);
   const [status, setStatus] = useState<Status>('loading');
   const [recoveryMessage, setRecoveryMessage] = useState('');
   const [connected, setConnected] = useState(false);
   const [conflicts, setConflicts] = useState<SyncState['conflicts']>([]);
+  const [syncInfo, setSyncInfo] = useState<SyncInfo>({ revision: -1, events: 0, pending: 0, lastSyncedAt: null, issue: '' });
+  const [syncIssue, setSyncIssue] = useState('');
   const current = useRef(initialTrip), alive = useRef(true), sequence = useRef(0);
   const show = useCallback((value: Trip) => { current.current = value; setTrip(value); }, []);
   const readShared = useCallback(async () => {
@@ -21,6 +31,7 @@ export function useTrip() {
     const state = await mirrorSharedTrip();
     if (!alive.current || number !== sequence.current || !state?.migrated) return;
     show(visibleTrip(state)); setConflicts(state.conflicts);
+    setSyncInfo({ revision: state.revision, events: state.server.stops.length, pending: state.pending.length, lastSyncedAt: state.lastSyncedAt || null, issue: '' });
     return state;
   }, [show]);
   const refresh = useCallback(async () => {
@@ -33,6 +44,7 @@ export function useTrip() {
       return;
     }
     setConnected(true);
+    const connection = accessKey();
     try {
       const unsent = Object.keys(localStorage).filter(key => key.startsWith(JOURNAL));
       for (const key of unsent) {
@@ -42,20 +54,19 @@ export function useTrip() {
       const state = await synchronize();
       await readShared();
       await synchronizeDocuments(state.documents);
-      if (alive.current) { setRecoveryMessage(''); setStatus(state.pending.length ? 'saving' : 'saved'); }
-    } catch {
+      if (connection !== accessKey()) return;
+      if (alive.current && connection === accessKey()) { setRecoveryMessage(''); setSyncIssue(''); setStatus(state.pending.length ? 'saving' : 'saved'); }
+      return await updateSyncState();
+    } catch (error) {
       await readShared().catch(() => {});
-      if (alive.current) setStatus('offline');
+      if (alive.current && connection === accessKey()) { setSyncIssue(syncErrorText(error)); setStatus('offline'); }
     }
   }, [readShared, show]);
   useEffect(() => {
     alive.current = true;
     try {
       const loaded = readLocalTrip(localStorage); show(loaded.trip); setRecoveryMessage(loaded.recoveryMessage);
-      if (location.hash.startsWith('#join=')) acceptInvitation(location.hash.slice(6));
     } catch { setStatus('error'); }
-    setConnected(isConnected());
-    refresh();
     const onConnection = () => { setConnected(isConnected()); refresh(); };
     const onCloud = () => { readShared().catch(() => setStatus('error')); };
     const onStorage = (event: StorageEvent) => {
@@ -67,10 +78,15 @@ export function useTrip() {
     const channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('andiamo-shared-updates') : null;
     if (channel) channel.onmessage = onCloud;
     window.addEventListener('andiamo-connection', onConnection);
+    const stopInvitations = listenForInvitations(error => { setSyncIssue(syncErrorText(error)); setStatus('error'); });
     window.addEventListener('andiamo-cloud-state', onCloud);
     window.addEventListener('storage', onStorage);
     window.addEventListener('online', onFocus);
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('pageshow', onFocus);
     document.addEventListener('visibilitychange', onFocus);
+    setConnected(isConnected());
+    refresh();
     if ('serviceWorker' in navigator && !['localhost', '127.0.0.1'].includes(location.hostname)) navigator.serviceWorker.register('./sw.js').catch(() => {});
     return () => {
       alive.current = false; clearInterval(timer); channel?.close();
@@ -78,6 +94,9 @@ export function useTrip() {
       window.removeEventListener('andiamo-cloud-state', onCloud);
       window.removeEventListener('storage', onStorage);
       window.removeEventListener('online', onFocus);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('pageshow', onFocus);
+      stopInvitations();
       document.removeEventListener('visibilitychange', onFocus);
     };
   }, [readShared, refresh, show]);
@@ -100,5 +119,5 @@ export function useTrip() {
       catch { setStatus('error'); }
     }
   }, [readShared, refresh, show]);
-  return { trip, status, mutate, retry: refresh, recoveryMessage, connected, conflicts };
+  return { trip, status, mutate, retry: refresh, recoveryMessage, connected, conflicts, syncInfo: { ...syncInfo, issue: syncIssue } };
 }
