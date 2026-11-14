@@ -1,0 +1,20 @@
+{
+  "name": "andiamo-rome-public",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node scripts/test.mjs",
+    "dev": "python3 -m http.server 5173 --bind 127.0.0.1 --directory docs"
+  },
+  "dependencies": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "lucide-react": "0.475.0",
+    "zod": "4.3.6"
+  },
+  "devDependencies": {
+    "esbuild": "0.27.2"
+  }
+}

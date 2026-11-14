@@ -1,0 +1,31 @@
+import { build } from 'esbuild';
+import { mkdir, readdir, readFile } from 'node:fs/promises';
+import assert from 'node:assert/strict';
+await mkdir('work/tests', { recursive: true });
+await build({ entryPoints: ['app/share.ts', 'app/model.ts'], bundle: true, outdir: 'work/tests', format: 'esm', platform: 'node' });
+const { createTripLink, readTripLink } = await import('../work/tests/share.js');
+const { initialTrip } = await import('../work/tests/model.js');
+const updated = structuredClone(initialTrip);
+updated.dayNotes[2] = 'מיה הוסיפה: קפה ליד הגטו ☕';
+updated.stops[0].done = true;
+updated.receipts = ['example-receipt'];
+const url = new URL(await createTripLink(updated, 'https://example.test/andiamo-rome/?old=1#bookings'));
+assert.equal(url.pathname, '/andiamo-rome/');
+assert.equal(url.search, '');
+assert.deepEqual(await readTripLink(url.hash), { ...updated, receipts: [] });
+assert.equal(await readTripLink('#plan'), null);
+await assert.rejects(() => readTripLink('#trip=g.not-valid!'));
+await assert.rejects(() => readTripLink('#trip=g.' + 'A'.repeat(100_001)));
+const invalid = structuredClone(initialTrip);
+invalid.bookings[0].url = 'javascript:alert(1)';
+await assert.rejects(() => createTripLink(invalid, 'https://example.test/andiamo-rome/'));
+assert(initialTrip.bookings.every(b => !b.reference));
+const docs = await readdir('docs');
+assert(docs.every(name => !/\.pdf$|\.env|sealed|secret|key/i.test(name)));
+for (const name of ['app.js', 'index.html', 'sw.js']) {
+  const source = await readFile('docs/' + name, 'utf8');
+  assert(!source.includes('/api/'), name + ' must not call private APIs');
+  assert(!source.includes('DOCUMENT_KEY'), name + ' must not contain runtime secrets');
+  assert(!source.includes('wix.chatgpt.site'), name + ' must not use the private host');
+}
+console.log('Passed: Hebrew sharing round-trip, import validation, safe defaults, public bundle separation.');

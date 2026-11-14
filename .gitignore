@@ -1,0 +1,9 @@
+/node_modules/
+/dist/
+/work/
+/outputs/
+.env*
+.dev.vars*
+*.pdf
+*.pem
+.DS_Store
