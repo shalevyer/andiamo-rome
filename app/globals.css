@@ -50,6 +50,11 @@ textarea,
 select {
   font: inherit;
 }
+select {
+  -webkit-appearance: menulist;
+  appearance: auto;
+  touch-action: manipulation;
+}
 button,
 a {
   touch-action: manipulation;
@@ -4004,3 +4009,32 @@ svg {
 
 .share-description { color: var(--muted); line-height: 1.8; margin: 0 0 22px; }
 .share-url { text-overflow: ellipsis; font-size: 13px; }
+
+/* Keep the operating system's select picker and comfortable phone-sized controls. */
+@media (max-width: 700px), (pointer: coarse) {
+  .field select,
+  .select-inline select {
+    font-size: 16px;
+    min-height: 48px;
+  }
+  .select-inline {
+    position: relative;
+    min-width: 0;
+    min-height: 48px;
+    padding: 0;
+    gap: 0;
+  }
+  .select-inline > svg {
+    position: absolute;
+    inset-inline-start: 12px;
+    pointer-events: none;
+  }
+  .select-inline select {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    padding-block: 10px;
+    padding-inline: 36px 12px;
+    border-radius: inherit;
+  }
+}
