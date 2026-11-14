@@ -107,3 +107,8 @@
 @media (prefers-reduced-motion: reduce) {
   .dialog, .dialog::backdrop, .stop-sheet-content { animation: none !important; transition: none !important; }
 }
+
+.numbered-pin.is-done > span { background: var(--charcoal); }
+.numbered-pin .pin-check { display: block; width: 16px; height: 16px; }
+.place-number.is-done { background: var(--charcoal); color: #fff; }
+.visited-key { color: var(--charcoal); font-size: 11px; font-weight: 600; margin-inline-start: 6px; }

@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { MapPin, ExternalLink } from 'lucide-react';
 import { mapUrl, type Stop } from './model';
+export const mapPinHtml = (number: number, done: boolean) => '<span><b>' + (done ? '<svg class="pin-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>' : String(number)) + '</b></span>';
 let loading: Promise<any> | undefined;
 function leaflet() {
   if ((window as any).L) return Promise.resolve((window as any).L);
@@ -32,6 +33,7 @@ export default function TripMap({
     [failed, setFailed] = useState(false),
     [ready, setReady] = useState(false);
   const selection = useRef(onSelect);
+  const boundsKey = useRef('');
   selection.current = onSelect;
   useEffect(() => {
     let disposed = false;
@@ -64,31 +66,36 @@ export default function TripMap({
       m = map.current;
     const layer = L.featureGroup().addTo(m);
     const points = stops.filter(
-      (s) => s.lat !== null && s.lng !== null && s.category !== 'transfer'
+      (s) => s.lat !== null && s.lng !== null
     );
     points.forEach((s, i) => {
       const marker = L.marker([s.lat, s.lng], {
         icon: L.divIcon({
-          className: 'numbered-pin',
-          html: '<span><b>' + (i + 1) + '</b></span>',
+          className: 'numbered-pin' + (s.done ? ' is-done' : ''),
+          html: mapPinHtml(i + 1, s.done),
           iconSize: [32, 40],
           iconAnchor: [16, 35],
         }),
-        title: s.title,
+        title: s.title + (s.done ? ' · כבר היינו ✓' : ''),
+        zIndexOffset: s.done ? 500 : 0,
+        riseOnHover: true,
         keyboard: true,
       }).addTo(layer);
       marker.on('click', () => selection.current(s));
       const label = document.createElement('span');
       label.dir = 'rtl';
-      label.textContent = s.title;
+      label.textContent = s.title + (s.done ? ' · כבר היינו ✓' : '');
       marker.bindTooltip(label);
     });
     L.marker([41.9081167, 12.4759667], {
       icon: L.divIcon({ className: 'home-pin', html: '<span>⌂</span>', iconSize: [32, 32] }),
       title: 'Ripetta Luxurious Suites',
     }).addTo(layer);
-    if (layer.getBounds().isValid())
+    const nextBounds = points.map(s => s.id + ':' + s.lat + ',' + s.lng).sort().join('|');
+    if (layer.getBounds().isValid() && boundsKey.current !== nextBounds) {
       m.fitBounds(layer.getBounds(), { padding: [35, 35], maxZoom: 15 });
+      boundsKey.current = nextBounds;
+    }
     setTimeout(() => m.invalidateSize(), 50);
     return () => layer.remove();
   }, [stops, ready]);
@@ -108,6 +115,7 @@ export default function TripMap({
         <span className="key-dot" />
         המקומות שלנו <span className="home-dot" />
         הלינה שלנו
+        <span className="visited-key">✓</span> כבר היינו
       </div>
     </div>
   );

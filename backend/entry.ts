@@ -1,7 +1,8 @@
 import { initialTrip, tripSchema } from '../app/model';
 import { mergeChanges, same, syncOperationSchema } from '../app/sync-model';
+import { geocodeLocation, normalizeLocation } from './geocode';
 
-type Env = { TRIP: DurableObjectNamespace; TRIP_KEY_SHA256: string; ALLOWED_ORIGINS: string };
+type Env = { TRIP: DurableObjectNamespace; TRIP_KEY_SHA256: string; ALLOWED_ORIGINS: string; GEOCODER_URL?: string };
 const docIds = ['flight-mia', 'flight-shalev', 'stay', 'insurance-mia', 'insurance-terms'];
 const json = (data: unknown, status = 200) => Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
 const hash = async (value: string | ArrayBuffer) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', typeof value === 'string' ? new TextEncoder().encode(value) : value))).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -30,7 +31,9 @@ export default {
 
 export class SharedTrip {
   sql: SqlStorage;
-  constructor(private ctx: DurableObjectState) {
+  private lookups = new Map<string, Promise<unknown>>();
+  private lookupQueue: Promise<unknown> = Promise.resolve();
+  constructor(private ctx: DurableObjectState, private env: Env) {
     this.sql = ctx.storage.sql;
     ctx.storage.transactionSync(() => {
       this.sql.exec(`CREATE TABLE IF NOT EXISTS trip (id INTEGER PRIMARY KEY, document TEXT NOT NULL, revision INTEGER NOT NULL);
@@ -38,6 +41,7 @@ export class SharedTrip {
         CREATE TABLE IF NOT EXISTS operations (id TEXT PRIMARY KEY, payload TEXT NOT NULL, status TEXT NOT NULL, created TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS revisions (revision INTEGER PRIMARY KEY, document TEXT NOT NULL, operation_id TEXT NOT NULL, created TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS tombstones (bucket TEXT NOT NULL, item_id TEXT NOT NULL, PRIMARY KEY(bucket,item_id));
+        CREATE TABLE IF NOT EXISTS map_locations (query TEXT PRIMARY KEY, result TEXT NOT NULL, expires INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS documents (id TEXT PRIMARY KEY, version TEXT);
         CREATE TABLE IF NOT EXISTS document_versions (version TEXT PRIMARY KEY, document_id TEXT NOT NULL, digest TEXT NOT NULL, size INTEGER NOT NULL, created TEXT NOT NULL, operation_id TEXT UNIQUE NOT NULL);
         CREATE TABLE IF NOT EXISTS document_chunks (version TEXT NOT NULL, chunk_index INTEGER NOT NULL, content BLOB NOT NULL, PRIMARY KEY(version,chunk_index));`);
@@ -55,6 +59,26 @@ export class SharedTrip {
   }
   async fetch(request: Request) {
     const url = new URL(request.url), path = url.pathname;
+    if (path === '/v1/places' && request.method === 'GET') {
+      const location = url.searchParams.get('location')?.trim() || '';
+      if (location.length < 2 || location.length > 300) return json({ error: 'Place name or address required' }, 400);
+      const key = normalizeLocation(location);
+      const cached = this.sql.exec<{ result: string; expires: number }>('SELECT result,expires FROM map_locations WHERE query=?', key).toArray()[0];
+      if (cached && cached.expires > Date.now()) return json({ point: JSON.parse(cached.result) });
+      if (!this.lookups.has(key)) {
+        const lookup = this.lookupQueue.catch(() => {}).then(async () => {
+          const point = await geocodeLocation(location, this.env.GEOCODER_URL || 'https://photon.komoot.io/api/');
+          this.sql.exec('INSERT OR REPLACE INTO map_locations VALUES (?,?,?)', key, JSON.stringify(point), Date.now() + (point ? 30 * 86400000 : 300000));
+          return point;
+        });
+        // One global queue for both travelers, with persistent positive and negative caching.
+        this.lookupQueue = lookup.catch(() => {}).then(() => new Promise(resolve => setTimeout(resolve, 1100)));
+        this.lookups.set(key, lookup);
+        lookup.finally(() => this.lookups.delete(key)).catch(() => {});
+      }
+      try { return json({ point: await this.lookups.get(key) }); }
+      catch { return json({ error: 'Location lookup temporarily unavailable' }, 503); }
+    }
     if (path === '/v1/trip' && request.method === 'GET') return json(this.snapshot());
     if (path === '/v1/trip' && request.method === 'POST') {
       const text = await request.text();

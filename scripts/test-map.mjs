@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {build} from 'esbuild';
+await build({entryPoints:['backend/geocode.ts','app/trip-map.tsx'],outdir:'work/map-tests',bundle:true,platform:'node',format:'esm'});
+const {geocodeLocation,normalizeLocation}=await import('../work/map-tests/backend/geocode.js');
+const {mapPinHtml}=await import('../work/map-tests/app/trip-map.js');
+const feature=(lng,lat,name='Pantheon')=>({geometry:{type:'Point',coordinates:[lng,lat]},properties:{name,city:'Roma'}});
+let requests=0;
+const fake=async(url)=>{requests++;assert.equal(url.searchParams.get('q'),'Pantheon Roma');assert.equal(url.searchParams.get('bbox'),'11.8,41.5,13.2,42.3');return Response.json({features:[feature(34,32,'Wrong region'),feature(12.4769,41.8986)]});};
+assert.deepEqual(await geocodeLocation('Pantheon Roma','https://provider.example/api/',fake),{lat:41.8986,lng:12.4769,label:'Pantheon, Roma'});assert.equal(requests,1);
+assert.equal(await geocodeLocation('Unknown','https://provider.example/api/',async()=>Response.json({features:[]})),null);
+assert.equal(await geocodeLocation('Wrong','https://provider.example/api/',async()=>Response.json({features:[feature(999,NaN)]})),null);
+await assert.rejects(()=>geocodeLocation('Roma','https://provider.example/api/',async()=>new Response('',{status:503})));
+assert.equal(normalizeLocation('  Piazza   Navona, Roma '),'piazza navona, roma');
+assert(mapPinHtml(2,false).includes('<b>2</b>'));assert(!mapPinHtml(2,false).includes('<svg'));
+assert(mapPinHtml(2,true).includes('pin-check'));assert(!mapPinHtml(2,true).includes('<b>2</b>'));
+assert.equal(mapPinHtml(2,false),mapPinHtml(2,false));
+console.log('Passed: location parsing, Rome bounds, empty/error responses, normalized cache keys and checked/unchecked pin rendering.');

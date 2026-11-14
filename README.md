@@ -12,6 +12,8 @@ The first connection archives the exact previous browser copy, then merges its c
 
 PDFs use conditional uploads, authenticated downloads and immutable version history. Existing local PDFs are preserved and migrated; conflicting versions require a choice. PDFs are not included in JSON trip backups or committed to GitHub. Previously opened PDFs are cached in IndexedDB for offline access.
 
+Map pins resolve new place names and addresses in the Rome area through the authenticated backend. Photon lookups are serialized and cached in a separate SQLite table (30 days for matches, five minutes for no match), with a browser cache for offline revisits. Only the location text is sent to the provider. Lookup never modifies trip records or replaces manual coordinates; an address change uses a different cache key. `GEOCODER_URL` can override the provider endpoint. Unrecognized locations remain in the itinerary with a prompt to refine the address. Checked places show checkmark pins and list badges; unchecking restores their numbers. Check-ins preserve the current map view.
+
 ## Data persistence
 
 The stable browser keys and database names must not change between builds. On the backend, preserve the Worker name, Durable Object binding/class and object identity `rome-2026-v1`. The schema only creates missing tables and inserts the initial trip when no trip exists. Deploying code never runs an overwrite/reset migration. Accepted trip revisions, rejected conflict payloads, idempotency records, deletion tombstones and prior PDF versions remain in the shared database.

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "node scripts/test.mjs",
+    "test": "node scripts/test.mjs && node scripts/test-map.mjs",
     "dev": "python3 -m http.server 5173 --bind 127.0.0.1 --directory docs"
   },
   "dependencies": {

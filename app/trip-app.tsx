@@ -76,6 +76,7 @@ import {
 } from './model';
 import { useTrip } from './use-trip';
 import TripMap from './trip-map';
+import { useMapLocations } from './map-locations';
 import Dialog from './dialog';
 import StopDetails from './stop-details';
 import SharedSettings from './shared-settings';
@@ -408,6 +409,7 @@ function BookingCard({
 
 export default function TripApp() {
   const { trip, status, mutate, retry, recoveryMessage, connected, conflicts } = useTrip();
+  const { stops: locatedStops, retryLocations } = useMapLocations(trip.stops);
   const [tab, setTab] = useState<Tab>('plan'),
     [day, setDay] = useState(0),
     [modal, setModal] = useState<Modal>(null),
@@ -499,7 +501,7 @@ export default function TripApp() {
       (filter === 'all' || (filter === 'done' && s.done) || (filter === 'open' && !s.done)) &&
       (!search || [s.title, s.location, s.notes].join(' ').includes(search))
   );
-  const mapped = trip.stops
+  const mapped = locatedStops
     .filter((s) => mapDay < 0 || s.day === mapDay)
     .sort((a, b) => a.day - b.day || sortStops(a, b, trip.start));
   const romeToday = new Date(
@@ -513,7 +515,7 @@ export default function TripApp() {
   const daysToGo = Math.max(0, Math.round((+dayDate(trip.start, 0) - +romeToday) / 86400000));
   const pinNumbers = new globalThis.Map(
     mapped
-      .filter((s) => s.lat !== null && s.lng !== null && s.category !== 'transfer')
+      .filter((s) => s.lat !== null && s.lng !== null)
       .map((s, i) => [s.id, i + 1])
   );
   const completed = allStops.filter((s) => s.done).length;
@@ -963,7 +965,7 @@ export default function TripApp() {
                       </button>
                     </div>
                     <TripMap
-                      stops={allStops}
+                      stops={locatedStops.filter(s => s.day === day).sort((a, b) => sortStops(a, b, trip.start))}
                       onSelect={(s) => setModal({ type: 'stop', value: s })}
                     />
                     <button
@@ -1050,7 +1052,7 @@ export default function TripApp() {
                   </select>
                 </label>
                 <span>
-                  {mapped.filter((s) => s.lat !== null && s.category !== 'transfer').length} מקומות
+                  {mapped.filter((s) => s.lat !== null && s.lng !== null).length} מקומות
                   מסומנים
                 </span>
                 <button className="button secondary" onClick={() => setModal({ type: 'stop' })}>
@@ -1065,19 +1067,17 @@ export default function TripApp() {
                   onSelect={(s) => setModal({ type: 'stop', value: s })}
                 />
                 <div className="map-place-list">
-                  {mapped
-                    .filter((s) => s.category !== 'transfer')
-                    .map((s, i) => (
+                  {mapped.map((s) => (
                       <button key={s.id} onClick={() => setModal({ type: 'stop', value: s })}>
-                        <span className={'place-number ' + (s.lat === null ? 'unlocated' : '')}>
-                          {pinNumbers.get(s.id) || '?'}
+                        <span className={'place-number ' + (s.lat === null ? 'unlocated ' : '') + (s.done ? 'is-done' : '')} aria-label={s.done ? 'כבר היינו' : undefined}>
+                          {s.done ? <Check size={14} /> : pinNumbers.get(s.id) || '?'}
                         </span>
                         <span>
                           <small>
                             {dateLabel(trip.start, s.day)} · {s.time || 'שעה פתוחה'}
                           </small>
                           <strong>{s.title}</strong>
-                          <span>{s.location || 'המיקום המדויק עדיין פתוח'}</span>
+                          <span>{s.location || 'המיקום המדויק עדיין פתוח'}{s.location && (s.lat === null || s.lng === null) ? ' · לזיהוי במפה כדאי להזין שם מקום או כתובת מדויקת' : ''}</span>
                         </span>
                         <ChevronLeft size={15} />
                       </button>
@@ -1086,7 +1086,8 @@ export default function TripApp() {
               </div>
               <p className="help-text">
                 <Info size={14} />
-                רק מקומות עם מיקום מזוהה מסומנים במפה. חיפוש וניווט זמינים גם מתוך כל עצירה.
+                מיקומים חדשים מתווספים אוטומטית כשיש חיבור. סימון ״כבר היינו״ מחליף את מספר הסיכה ב־✓.
+                <button className="text-button" onClick={retryLocations}>עדכון מיקומים</button>
               </p>
             </>
           )}
@@ -1849,6 +1850,7 @@ function StopForm({
                 </a>
               )}
             </div>
+            <small className="help-text">שם של מקום אחד או כתובת מדויקת ברומא — הסיכה תתווסף למפה אוטומטית כשיש חיבור.</small>
           </Field>
           <Field label="איפה זה עומד?">
             <select name="status" defaultValue={stop?.status || 'draft'}>
