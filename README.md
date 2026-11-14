@@ -8,6 +8,8 @@ Events open in a read-only detail view with navigation, completion and an explic
 
 Edits stay in this browser. “Share updated trip” creates a snapshot link; the recipient reviews it before replacing their saved plan. Later changes require a new link. JSON backup and restore are also available. There is no automatic cross-device sync.
 
+The local storage key stays stable across deployments. Opening a new build only reads existing data. Before each save, the previous exact saved copy is kept as an automatic recovery backup, available in settings. Unreadable originals are retained separately instead of being reset. Changes in another tab of the same browser refresh the view; cross-device sync still requires a connected backend.
+
 PDFs added in the app stay in this browser's IndexedDB. They are not uploaded, included in snapshot links or JSON backups, or committed to this repository. Original booking codes, personal travel documents, insurance certificates and runtime credentials are excluded from this public edition. Clearing site data removes locally saved edits and documents.
 
 ## Development

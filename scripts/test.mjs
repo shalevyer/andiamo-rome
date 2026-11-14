@@ -3,7 +3,7 @@ import { mkdir, readdir, readFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 await mkdir('work/tests', { recursive: true });
-await build({ entryPoints: ['app/share.ts', 'app/model.ts'], bundle: true, outdir: 'work/tests', format: 'esm', platform: 'node' });
+await build({ entryPoints: ['app/share.ts', 'app/model.ts', 'app/local-data.ts'], bundle: true, outdir: 'work/tests', format: 'esm', platform: 'node' });
 const { createTripLink, readTripLink } = await import('../work/tests/share.js');
 const { initialTrip } = await import('../work/tests/model.js');
 const updated = structuredClone(initialTrip);
@@ -57,3 +57,38 @@ context.fetch = async () => { throw Error('offline'); };
 handlers.fetch({ request: new Request(scope + 'app.js?v=next-version'), respondWith: value => { result = value; }, waitUntil: promise => waits.push(promise) });
 assert.equal(await (await result).text(), 'updated code');
 console.log('Passed: updated asset versions bypass stale cache; exact cached versions work offline.');
+
+const { readLocalTrip, saveLocalTrip, TRIP_STORAGE_KEY, RECOVERY_STORAGE_KEY, RECOVERY_ARCHIVE_PREFIX } = await import('../work/tests/local-data.js');
+const storedTrip = structuredClone(initialTrip);
+storedTrip.stops.push({ ...storedTrip.stops[0], id: 'mia-added-place', title: 'המקום שמיה הוסיפה' });
+storedTrip.notes = 'הערות שכבר הוספנו';
+const originalBytes = JSON.stringify(storedTrip, null, 2);
+const values = new Map([[TRIP_STORAGE_KEY, originalBytes]]);
+let writes = 0;
+const storage = {
+  getItem: key => values.get(key) ?? null,
+  setItem: (key, value) => { writes++; values.set(key, value); },
+};
+assert.deepEqual(readLocalTrip(storage).trip, storedTrip);
+assert.equal(writes, 0, 'opening a new build must not write or reseed saved data');
+const changed = structuredClone(storedTrip);
+changed.notes += ' · עוד משהו';
+saveLocalTrip(storage, changed);
+assert.equal(values.get(RECOVERY_STORAGE_KEY), originalBytes);
+assert.equal(JSON.parse(values.get(TRIP_STORAGE_KEY)).stops.at(-1).id, 'mia-added-place');
+const broken = '{unreadable original bytes';
+values.set(TRIP_STORAGE_KEY, broken);
+const recovered = readLocalTrip(storage);
+assert(recovered.recoveryMessage);
+assert.deepEqual(recovered.trip, storedTrip);
+assert.equal(values.get(TRIP_STORAGE_KEY), broken, 'an unreadable trip must remain untouched');
+saveLocalTrip(storage, recovered.trip);
+saveLocalTrip(storage, changed);
+assert([...values].some(([key, value]) => key.startsWith(RECOVERY_ARCHIVE_PREFIX) && value === broken));
+const beforeFullStorage = values.get(TRIP_STORAGE_KEY);
+assert.throws(() => saveLocalTrip({
+  getItem: storage.getItem,
+  setItem: () => { throw Error('storage full'); },
+}, storedTrip));
+assert.equal(values.get(TRIP_STORAGE_KEY), beforeFullStorage);
+console.log('Passed: deployments preserve additions, prior versions are backed up, unreadable originals are retained, full storage cannot replace saved data.');

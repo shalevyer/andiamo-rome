@@ -81,6 +81,7 @@ import Dialog from './dialog';
 import StopDetails from './stop-details';
 import { documents, documentAvailability, saveDocument, openDocument } from './documents';
 import { createTripLink, readTripLink } from './share';
+import { TRIP_STORAGE_KEY, RECOVERY_STORAGE_KEY } from './local-data';
 const icons = { sight: Landmark, food: Utensils, coffee: Coffee, transfer: Plane, free: Leaf };
 const nav = [
   { id: 'plan', label: 'הטיול שלנו', icon: CalendarDays },
@@ -407,7 +408,7 @@ function BookingCard({
 }
 
 export default function TripApp() {
-  const { trip, status, mutate, retry } = useTrip();
+  const { trip, status, mutate, retry, recoveryMessage } = useTrip();
   const [tab, setTab] = useState<Tab>('plan'),
     [day, setDay] = useState(0),
     [modal, setModal] = useState<Modal>(null),
@@ -660,8 +661,11 @@ export default function TripApp() {
         {status === 'error' && (
           <div className="connection-banner" role="status">
             <CloudOff size={16} />
-            <span>השינויים פתוחים כאן, אבל לא נשמרו במכשיר. כדאי להוריד גיבוי לפני שסוגרים.</span>
-            <button onClick={exportTrip}>הורדת גיבוי</button>
+            <span>{recoveryMessage || 'השינויים פתוחים כאן, אבל לא נשמרו במכשיר. כדאי להוריד גיבוי לפני שסוגרים.'}</span>
+            <button onClick={recoveryMessage ? () => {
+              const raw = localStorage.getItem(TRIP_STORAGE_KEY);
+              if (raw !== null) download('andiamo-original-recovery.json', raw);
+            } : exportTrip}>{recoveryMessage ? 'הורדת העותק המקורי' : 'הורדת גיבוי'}</button>
           </div>
         )}
         <main id="main" key={tab} className="content">
@@ -1562,6 +1566,16 @@ export default function TripApp() {
             </div>
           </div>
           <div className="settings-actions">
+            <button onClick={() => {
+              const raw = localStorage.getItem(RECOVERY_STORAGE_KEY);
+              if (raw === null) { notify('הגיבוי האוטומטי ייווצר בשמירה הבאה של שינוי'); return; }
+              download('andiamo-automatic-recovery.json', raw);
+              notify('הגיבוי האוטומטי הורד למכשיר');
+            }}>
+              <ShieldCheck size={19} />
+              <span><strong>הגיבוי האוטומטי האחרון</strong><small>העותק שנשמר לפני השינוי האחרון במכשיר הזה</small></span>
+              <ChevronLeft size={16} />
+            </button>
             <button onClick={shareTrip}>
               <Share2 size={19} />
               <span>
