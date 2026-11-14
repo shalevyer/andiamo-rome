@@ -48,7 +48,6 @@ import {
   Plus,
   Search,
   Share2,
-  Smartphone,
   Settings2,
   ShieldCheck,
   Sun,
@@ -76,6 +75,8 @@ import {
 } from './model';
 import { useTrip } from './use-trip';
 import TripMap from './trip-map';
+import { IsraelTime, RomeIllustration, WeatherAtmosphere, useRomeWeather } from './weather';
+import { weatherKind } from './weather-model';
 import { useMapLocations } from './map-locations';
 import Dialog from './dialog';
 import StopDetails from './stop-details';
@@ -153,12 +154,6 @@ function Empty({
       {action}
     </div>
   );
-}
-function Status({ state, connected, retry }: { state: string; connected: boolean; retry: () => void }) {
-  const Icon = state === 'offline' || state === 'error' ? CloudOff : state === 'loading' || state === 'saving' ? LoaderCircle : connected ? Cloud : Smartphone;
-  return <button className={'save-status ' + state} onClick={retry} title="שמירה, סנכרון והיסטוריה">
-    <Icon size={15} /><span>{state === 'error' ? 'נדרשת בדיקה' : state === 'offline' ? 'ממתין לחיבור' : state === 'saving' ? 'שומרים…' : state === 'loading' ? 'מתחברים…' : connected ? 'מסונכרן' : 'שמור במכשיר'}</span>
-  </button>;
 }
 function StopCard({
   stop,
@@ -409,6 +404,7 @@ function BookingCard({
 
 export default function TripApp() {
   const { trip, status, mutate, retry, recoveryMessage, connected, conflicts } = useTrip();
+  const { weather, unavailable: weatherUnavailable } = useRomeWeather();
   const { stops: locatedStops, retryLocations } = useMapLocations(trip.stops);
   const [tab, setTab] = useState<Tab>('plan'),
     [day, setDay] = useState(0),
@@ -606,7 +602,8 @@ export default function TripApp() {
   };
   return (
     <div className="app-shell">
-      <div className="main-shell">
+      <div className="main-shell" data-weather={weatherKind(weather?.weather_code)} data-daylight={weather ? weather.is_day ? 'day' : 'night' : 'unknown'}>
+        <WeatherAtmosphere />
         <header className="topbar">
           <div className="topbar-inner">
             <a
@@ -645,14 +642,10 @@ export default function TripApp() {
               ))}
             </nav>
             <div className="topbar-right">
-              <Status state={status} connected={connected} retry={() => setModal({ type: 'sync' })} />
+              <IsraelTime />
               <button className="icon-button" aria-label="שיתוף התוכנית המעודכנת" onClick={shareTrip}>
                 <Share2 size={18} />
               </button>
-              <div className="avatars" aria-label="Shalev & Mia">
-                <span>S</span>
-                <span>M</span>
-              </div>
               <button
                 className="icon-button topbar-settings"
                 aria-label="הגדרות וגיבוי"
@@ -701,16 +694,7 @@ export default function TripApp() {
                     </span>
                   </div>
                 </div>
-                <div className="intro-photo">
-                  <img src="./rome-warm.jpg" alt="מזרקת טרווי ברומא" />
-                  <span className="photo-caption">
-                    <span>ROMA</span>
-                    <span>41°54′ N</span>
-                  </span>
-                  <span className="photo-ticket">
-                    18—23 <small>NOV</small>
-                  </span>
-                </div>
+                <RomeIllustration weather={weather} unavailable={weatherUnavailable} />
               </section>
               <div className="quick-strip">
                 <button onClick={() => changeTab('bookings')}>

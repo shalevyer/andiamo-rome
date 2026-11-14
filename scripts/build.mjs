@@ -13,7 +13,7 @@ await build({
 const hash = createHash('sha256').update(await readFile('work/client/app.js')).update(await readFile('work/client/app.css')).update(await readFile('public/sw.js')).update(await readFile(new URL(import.meta.url))).digest('hex').slice(0, 12);
 await rm('docs', { recursive: true, force: true });
 await mkdir('docs', { recursive: true });
-for (const name of ['google-sans-OFL.txt', 'google-sans-hebrew.woff2', 'google-sans-latin.woff2', 'rome-warm.jpg', 'favicon.svg']) {
+for (const name of ['google-sans-OFL.txt', 'google-sans-hebrew.woff2', 'google-sans-latin.woff2', 'favicon.svg']) {
   await cp('public/' + name, 'docs/' + name);
 }
 await cp('work/client/app.js', 'docs/app.js');
