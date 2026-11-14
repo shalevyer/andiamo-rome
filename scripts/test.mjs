@@ -1,6 +1,7 @@
 import { build } from 'esbuild';
 import { mkdir, readdir, readFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
+import vm from 'node:vm';
 await mkdir('work/tests', { recursive: true });
 await build({ entryPoints: ['app/share.ts', 'app/model.ts'], bundle: true, outdir: 'work/tests', format: 'esm', platform: 'node' });
 const { createTripLink, readTripLink } = await import('../work/tests/share.js');
@@ -29,3 +30,30 @@ for (const name of ['app.js', 'index.html', 'sw.js']) {
   assert(!source.includes('wix.chatgpt.site'), name + ' must not use the private host');
 }
 console.log('Passed: Hebrew sharing round-trip, import validation, safe defaults, public bundle separation.');
+
+// An older controller must fetch a newly versioned bundle, never substitute an old unversioned one.
+const handlers = {};
+const scope = 'https://example.test/andiamo-rome/';
+const entries = new Map([[scope + 'app.js', new Response('stale code')]]);
+const cache = {
+  match: async request => entries.get(typeof request === 'string' ? request : request.url),
+  put: async (request, response) => { entries.set(request.url, response); },
+};
+let fetched = 0;
+const context = {
+  URL, Request, Response,
+  self: { registration: { scope }, location: { origin: 'https://example.test' }, addEventListener: (name, handler) => { handlers[name] = handler; } },
+  caches: { open: async () => cache },
+  fetch: async () => { fetched++; return new Response('updated code'); },
+};
+vm.runInNewContext(await readFile('docs/sw.js', 'utf8'), context);
+let result;
+const waits = [];
+handlers.fetch({ request: new Request(scope + 'app.js?v=next-version'), respondWith: value => { result = value; }, waitUntil: promise => waits.push(promise) });
+assert.equal(await (await result).text(), 'updated code');
+await Promise.all(waits);
+assert.equal(fetched, 1);
+context.fetch = async () => { throw Error('offline'); };
+handlers.fetch({ request: new Request(scope + 'app.js?v=next-version'), respondWith: value => { result = value; }, waitUntil: promise => waits.push(promise) });
+assert.equal(await (await result).text(), 'updated code');
+console.log('Passed: updated asset versions bypass stale cache; exact cached versions work offline.');

@@ -10,7 +10,7 @@ await build({
   define: { 'process.env.NODE_ENV': '"production"' },
   target: ['es2022'], legalComments: 'none',
 });
-const hash = createHash('sha256').update(await readFile('work/client/app.js')).update(await readFile('work/client/app.css')).digest('hex').slice(0, 12);
+const hash = createHash('sha256').update(await readFile('work/client/app.js')).update(await readFile('work/client/app.css')).update(await readFile('public/sw.js')).digest('hex').slice(0, 12);
 await rm('docs', { recursive: true, force: true });
 await mkdir('docs', { recursive: true });
 for (const name of ['google-sans-OFL.txt', 'google-sans-hebrew.woff2', 'google-sans-latin.woff2', 'rome-warm.jpg', 'favicon.svg']) {
