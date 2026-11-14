@@ -5,7 +5,7 @@ import vm from 'node:vm';
 await mkdir('work/tests', { recursive: true });
 await build({ entryPoints: ['app/share.ts', 'app/model.ts', 'app/local-data.ts', 'app/sync-model.ts'], bundle: true, outdir: 'work/tests', format: 'esm', platform: 'node' });
 const { createTripLink, readTripLink } = await import('../work/tests/share.js');
-const { initialTrip } = await import('../work/tests/model.js');
+const { initialTrip, sortStops, applyOperation } = await import('../work/tests/model.js');
 const updated = structuredClone(initialTrip);
 updated.dayNotes[2] = 'מיה הוסיפה: קפה ליד הגטו ☕';
 updated.stops[0].done = true;
@@ -112,3 +112,18 @@ const imported = structuredClone(initialTrip); imported.notes = 'פתק מגיב
 const importChanges = changesForOperation(otherDevice, { id: 'backup-import', type: 'restore', value: imported, base: initialTrip });
 assert(mergeChanges(otherDevice, importChanges, new Set()).trip.stops.some(v => v.id === 'live-addition'));
 console.log('Passed: open forms preserve unrelated remote edits, stale deletions need review, imports retain live additions.');
+
+const timeline = structuredClone(initialTrip);
+const event = (id, time, order, zone = 'Europe/Rome', day = 0) => ({ ...timeline.stops[0], id, time, order, zone, day });
+timeline.stops = [event('checkin', '15:00', 1), event('open-a', '', 2), event('shopping', '13:00', 99), event('coffee', '11:30', 10), event('open-b', '', 3)];
+const sortedIds = trip => trip.stops.filter(s => s.day === 0).sort((a,b) => sortStops(a,b,trip.start)).map(s => s.id);
+assert.deepEqual(sortedIds(timeline), ['coffee', 'shopping', 'checkin', 'open-a', 'open-b']);
+const editedTimeline = applyOperation(timeline, { id: 'time-change', type: 'stop', value: { ...timeline.stops[2], time: '09:00' } });
+assert.deepEqual(sortedIds(editedTimeline), ['shopping', 'coffee', 'checkin', 'open-a', 'open-b']);
+assert.deepEqual(sortedIds(timeline), ['coffee', 'shopping', 'checkin', 'open-a', 'open-b'], 'sorting must not rewrite saved records');
+const tied = [event('first', '13:00', 1), event('second', '13:00', 2)];
+assert.deepEqual(tied.reverse().sort((a,b) => sortStops(a,b,timeline.start)).map(s=>s.id), ['first','second']);
+assert(sortStops(event('israel', '12:45', 1, 'Asia/Jerusalem'), event('rome', '12:00', 0), timeline.start) < 0);
+const nextDay = applyOperation(timeline, { id: 'day-change', type: 'stop', value: { ...timeline.stops[2], day: 1 } });
+assert(!sortedIds(nextDay).includes('shopping'));
+console.log('Passed: timeline follows edited times, keeps untimed events last and ties stable, respects flight time zones and day changes without rewriting data.');

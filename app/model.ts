@@ -123,7 +123,24 @@ export const dateLabel = (start: string, day: number, long = false) =>
     month: long ? 'long' : 'short',
     ...(long ? { weekday: 'long' as const } : {}),
   }).format(dayDate(start, day));
-export const sortStops = (a: Stop, b: Stop) => a.order - b.order;
+const zoneFormatters = new Map<string, Intl.DateTimeFormat>();
+function stopInstant(stop: Stop, start: string) {
+  if (!zoneFormatters.has(stop.zone)) zoneFormatters.set(stop.zone, new Intl.DateTimeFormat('en-US', { timeZone: stop.zone, timeZoneName: 'longOffset' }));
+  const wallTime = Date.parse(isoDay(start, stop.day) + 'T' + stop.time + ':00Z');
+  let instant = wallTime;
+  // Resolve the offset at the event's date, independently of the viewing device's zone.
+  for (let i = 0; i < 2; i++) {
+    const offset = zoneFormatters.get(stop.zone)!.formatToParts(new Date(instant)).find(p => p.type === 'timeZoneName')!.value;
+    const match = offset.match(/GMT([+-])(\d{2}):(\d{2})/);
+    const minutes = match ? (Number(match[2]) * 60 + Number(match[3])) * (match[1] === '-' ? -1 : 1) : 0;
+    instant = wallTime - minutes * 60000;
+  }
+  return instant;
+}
+export const sortStops = (a: Stop, b: Stop, start = initialTrip.start) => {
+  if (!a.time || !b.time) return Number(!a.time) - Number(!b.time) || a.order - b.order;
+  return stopInstant(a, start) - stopInstant(b, start) || a.order - b.order;
+};
 export const mapUrl = (location: string) =>
   'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(location);
 const orders = [0, 0, 0, 0, 0, 0];
@@ -522,7 +539,7 @@ export function applyOperation(trip: Trip, op: Operation): Trip {
     case 'move': {
       const stop = t.stops.find((s) => s.id === op.value.id);
       if (!stop) break;
-      const list = t.stops.filter((s) => s.day === stop.day).sort(sortStops);
+      const list = t.stops.filter((s) => s.day === stop.day).sort((a, b) => sortStops(a, b, t.start));
       const index = list.findIndex((s) => s.id === stop.id),
         other = list[index + (op.value.direction === 'up' ? -1 : 1)];
       if (other) {

@@ -12,8 +12,6 @@ import {
 } from 'react';
 import {
   ArrowLeft,
-  ArrowUp,
-  ArrowDown,
   ArrowUpLeft,
   ArrowDownToLine,
   ArrowUpFromLine,
@@ -495,7 +493,7 @@ export default function TripApp() {
       notify('לא הצלחנו להעתיק. אפשר לסמן ולהעתיק ידנית.');
     }
   };
-  const allStops = trip.stops.filter((s) => s.day === day).sort(sortStops);
+  const allStops = trip.stops.filter((s) => s.day === day).sort((a, b) => sortStops(a, b, trip.start));
   const stops = allStops.filter(
     (s) =>
       (filter === 'all' || (filter === 'done' && s.done) || (filter === 'open' && !s.done)) &&
@@ -503,7 +501,7 @@ export default function TripApp() {
   );
   const mapped = trip.stops
     .filter((s) => mapDay < 0 || s.day === mapDay)
-    .sort((a, b) => a.day - b.day || sortStops(a, b));
+    .sort((a, b) => a.day - b.day || sortStops(a, b, trip.start));
   const romeToday = new Date(
     new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Europe/Rome',
@@ -1429,10 +1427,6 @@ export default function TripApp() {
             setModal({ type: 'stop', value });
             notify('העצירה נשמרה בתוכנית');
           }}
-          onMove={(value) => {
-            act({ id: uid(), type: 'move', value });
-            notify('סדר העצירות עודכן');
-          }}
           onDelete={(stop) => setModal({ type: 'delete', kind: 'stop', id: stop.id, title: stop.title, base: stop })}
         />
       )}
@@ -1691,7 +1685,7 @@ function SimpleForm({
     </Dialog>
   );
 }
-function StopSheet({ stop, startEditing, day, trip, onClose, onSave, onDelete, onMove, onDone, onCopy }: {
+function StopSheet({ stop, startEditing, day, trip, onClose, onSave, onDelete, onDone, onCopy }: {
   stop?: Stop;
   startEditing?: boolean;
   day: number;
@@ -1699,7 +1693,6 @@ function StopSheet({ stop, startEditing, day, trip, onClose, onSave, onDelete, o
   onClose: () => void;
   onSave: (stop: Stop, base?: Stop) => void;
   onDelete: (stop: Stop) => void;
-  onMove: (value: { id: string; direction: 'up' | 'down' }) => void;
   onDone: (stop: Stop) => void;
   onCopy: (value: string) => void;
 }) {
@@ -1724,7 +1717,7 @@ function StopSheet({ stop, startEditing, day, trip, onClose, onSave, onDelete, o
         {editing ? <StopForm stop={stop} day={day} trip={trip}
           onClose={stop ? showDetails : onClose}
           onSave={(value, base) => { onSave(value, base); showDetails(); }}
-          onDelete={onDelete} onMove={onMove} />
+          onDelete={onDelete} />
         : stop && <StopDetails stop={stop} trip={trip} onEdit={showEditor} onDone={() => onDone(stop)} onCopy={onCopy} />}
       </div>
     </Dialog>
@@ -1737,7 +1730,6 @@ function StopForm({
   onClose,
   onSave,
   onDelete,
-  onMove,
 }: {
   stop?: Stop;
   day: number;
@@ -1745,7 +1737,6 @@ function StopForm({
   onClose: () => void;
   onSave: (s: Stop, base?: Stop) => void;
   onDelete: (s: Stop) => void;
-  onMove: (s: { id: string; direction: 'up' | 'down' }) => void;
 }) {
   const [error, setError] = useState('');
   const [loc, setLoc] = useState(stop?.location || '');
@@ -1891,27 +1882,7 @@ function StopForm({
             />
           </Field>
         </div>
-        {stop && (
-          <div className="reorder-actions">
-            <span>סדר העצירות ביום</span>
-            <button
-              type="button"
-              className="text-button"
-              onClick={() => onMove({ id: stop.id, direction: 'up' })}
-            >
-              <ArrowUp size={14} />
-              למעלה
-            </button>
-            <button
-              type="button"
-              className="text-button"
-              onClick={() => onMove({ id: stop.id, direction: 'down' })}
-            >
-              <ArrowDown size={14} />
-              למטה
-            </button>
-          </div>
-        )}
+        <p className="help-text">העצירות מסתדרות אוטומטית לפי השעה. עצירות ללא שעה מופיעות בסוף היום.</p>
         <details className="coordinate-details">
           <summary>סיכה מדויקת במפה · לא חובה</summary>
           <p>ניווט עובד לפי השם גם בלי סיכה. להוספת סיכה, אפשר להעתיק קווי רוחב ואורך ממפות.</p>
