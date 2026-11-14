@@ -44,6 +44,8 @@ export default function TripMap({
           scrollWheelZoom: large,
           zoomControl: large,
           attributionControl: true,
+          zoomAnimation: false,
+          fadeAnimation: false,
         }).setView([41.904, 12.477], 14);
         map.current = m;
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -94,7 +96,7 @@ export default function TripMap({
     }).addTo(layer);
     const nextBounds = points.map(s => s.id + ':' + s.lat + ',' + s.lng).sort().join('|');
     if (layer.getBounds().isValid() && boundsKey.current !== nextBounds) {
-      m.fitBounds(layer.getBounds(), { padding: [35, 35], maxZoom: 15 });
+      m.fitBounds(layer.getBounds(), { padding: [35, 35], maxZoom: 15, animate: false });
       boundsKey.current = nextBounds;
     }
     const resizeTimer = setTimeout(() => { if (map.current === m) m.invalidateSize(); }, 50);

@@ -1,9 +1,9 @@
 const PREFIX = 'andiamo-public-' + new URL(self.registration.scope).pathname;
-const CACHE = PREFIX + 'fae3bf21d04b';
+const CACHE = PREFIX + '7cf9179bb3f8';
 const base = self.registration.scope;
 const asset = name => new URL(name, base).href;
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(['./', 'app.js?v=fae3bf21d04b', 'app.css?v=fae3bf21d04b', 'rome-warm.jpg', 'favicon.svg', 'google-sans-hebrew.woff2', 'google-sans-latin.woff2'].map(asset))).then(() => self.skipWaiting()));
+  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(['./', 'app.js?v=7cf9179bb3f8', 'app.css?v=7cf9179bb3f8', 'rome-warm.jpg', 'favicon.svg', 'google-sans-hebrew.woff2', 'google-sans-latin.woff2'].map(asset))).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', event => {
   event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key.startsWith(PREFIX) && key !== CACHE).map(key => caches.delete(key)))).then(() => self.clients.claim()));
